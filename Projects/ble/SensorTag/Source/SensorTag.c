@@ -22,7 +22,7 @@
   its documentation for any purpose.
 
   YOU FURTHER ACKNOWLEDGE AND AGREE THAT THE SOFTWARE AND DOCUMENTATION ARE
-  PROVIDED “AS IS” WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+  PROVIDED “AS IS?WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
   INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY, TITLE,
   NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
   TEXAS INSTRUMENTS OR ITS LICENSORS BE LIABLE OR OBLIGATED UNDER CONTRACT,
@@ -40,11 +40,11 @@
 /*********************************************************************
  * INCLUDES
  */
-
+#include <string.h>
 #include "bcomdef.h"
 #include "OSAL.h"
 #include "OSAL_PwrMgr.h"
-
+#include "OSAL_Tasks.h"
 #include "OnBoard.h"
 #include "hal_adc.h"
 #include "hal_led.h"
@@ -58,16 +58,16 @@
 #include "gattservapp.h"
 
 #if defined ( PLUS_BROADCASTER )
-  #include "peripheralBroadcaster.h"
+#include "peripheralBroadcaster.h"
 #else
-  #include "peripheral.h"
+#include "peripheral.h"
 #endif
 
 #include "gapbondmgr.h"
 
 #if defined FEATURE_OAD
-  #include "oad.h"
-  #include "oad_target.h"
+#include "oad.h"
+#include "oad_target.h"
 #endif
 
 // Services
@@ -90,12 +90,16 @@
 #include "hal_sensor.h"
 
 #include "hal_irtemp.h"
+#include "hal_LM75A_nxp.h"
 #include "hal_acc.h"
 #include "hal_humi.h"
 #include "hal_mag.h"
 #include "hal_bar.h"
 #include "hal_gyro.h"
-
+#include "MPU6050_6Axis_MotionApps20Egg.h"
+#include "i2c.h"
+#include "OSAL_Clock.h"
+#include "md_profile.h"
 /*********************************************************************
  * MACROS
  */
@@ -106,7 +110,7 @@
 
 // How often to perform sensor reads (milliseconds)
 #define TEMP_DEFAULT_PERIOD                   1000
-#define HUM_DEFAULT_PERIOD                    1000
+#define HUM_DEFAULT_PERIOD                    70000
 #define BAR_DEFAULT_PERIOD                    1000
 #define MAG_DEFAULT_PERIOD                    2000
 #define ACC_DEFAULT_PERIOD                    1000
@@ -120,22 +124,22 @@
 #define GYRO_STARTUP_TIME                     60    // Start-up time max. 50 ms
 
 // What is the advertising interval when device is discoverable (units of 625us, 160=100ms)
-#define DEFAULT_ADVERTISING_INTERVAL          160
+#define DEFAULT_ADVERTISING_INTERVAL          1600
 
 // General discoverable mode advertises indefinitely
-#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_LIMITED
+#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
 
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     80
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     280
 
 // Maximum connection interval (units of 1.25ms, 800=1000ms) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     800
+#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     296
 
 // Slave latency to use if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_SLAVE_LATENCY         0
+#define DEFAULT_DESIRED_SLAVE_LATENCY         3
 
 // Supervision timeout value (units of 10ms, 1000=10s) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_CONN_TIMEOUT          1000
+#define DEFAULT_DESIRED_CONN_TIMEOUT          600
 
 // Whether to enable automatic parameter update request when a connection is formed
 #define DEFAULT_ENABLE_UPDATE_REQUEST         FALSE
@@ -152,7 +156,7 @@
 #define B_ADDR_STR_LEN                        15
 
 #if defined ( PLUS_BROADCASTER )
-  #define ADV_IN_CONN_WAIT                    500 // delay 500 ms
+#define ADV_IN_CONN_WAIT                    500 // delay 500 ms
 #endif
 
 // Side key bit
@@ -196,107 +200,124 @@ static gaprole_States_t gapProfileState = GAPROLE_INIT;
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8 scanRspData[] =
 {
-  // complete name
-  0x0A,   // length of this data
-  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
-  0x53,   // 'S'
-  0x65,   // 'e'
-  0x6E,   // 'n'
-  0x73,   // 's'
-  0x6F,   // 'o'
-  0x72,   // 'r'
-  0x54,   // 'T'
-  0x61,   // 'a'
-  0x67,   // 'g'
+    // complete name
+    0x0B,   // length of this data
+    GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+    0x56,   // 'V'
+    0x75,   // 'u'
+    0x6C,   // 'l'
+    0x74,   // 't'
+    0x75,   // 'u'
+    0x72,   // 'r'
+    0x65,   // 'e'
+    0x45,   // 'E'
+    0x67,   // 'g'
+    0x67,   // 'g'
 
-  // connection interval range
-  0x05,   // length of this data
-  GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
-  LO_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),
-  HI_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),
-  LO_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),
-  HI_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),
+    // connection interval range
+    0x05,   // length of this data
+    GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
+    LO_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),
+    HI_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),
+    LO_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),
+    HI_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),
 
-  // Tx power level
-  0x02,   // length of this data
-  GAP_ADTYPE_POWER_LEVEL,
-  0       // 0dBm
+    // Tx power level
+    0x02,   // length of this data
+    GAP_ADTYPE_POWER_LEVEL,
+    0       // 0dBm
 };
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
 // best kept short to conserve power while advertisting)
 static uint8 advertData[] =
 {
-  // Flags; this sets the device to use limited discoverable
-  // mode (advertises for 30 seconds at a time) instead of general
-  // discoverable mode (advertises indefinitely)
-  0x02,   // length of this data
-  GAP_ADTYPE_FLAGS,
-  DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+    // Flags; this sets the device to use limited discoverable
+    // mode (advertises for 30 seconds at a time) instead of general
+    // discoverable mode (advertises indefinitely)
+    0x02,   // length of this data
+    GAP_ADTYPE_FLAGS,
+    DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
 };
 
 // GAP GATT Attributes
-static uint8 attDeviceName[] = "TI BLE Sensor Tag";
+static uint8 attDeviceName[] = "VultureEgg";
 
 // Sensor State Variables
-static bool   irTempEnabled = FALSE;
-static bool   magEnabled = FALSE;
-static uint8  accConfig = ST_CFG_SENSOR_DISABLE;
-static bool   barEnabled = FALSE;
+//static bool   irTempEnabled = FALSE;
+//static bool   magEnabled = FALSE;
+//static uint8  accConfig = ST_CFG_SENSOR_DISABLE;
+static uint8  mpu6050Config = ST_CFG_SENSOR_DISABLE;
+//static bool   barEnabled = FALSE;
 static bool   humiEnabled = FALSE;
-static bool   gyroEnabled = FALSE;
+//static bool   gyroEnabled = FALSE;
+static bool   lm75Enabled = FALSE;
 
-static bool   barBusy = FALSE;
+typedef enum
+{
+    EGG_STATE_MEASURE_IDLE,
+    EGG_STATE_MEASURE_HUMIDITY,
+    EGG_STATE_MEASURE_LM75A,
+    EGG_STATE_MEASURE_MPU6050
+} t_enum_EggState;
+static t_enum_EggState gEggState = EGG_STATE_MEASURE_IDLE; // 0 : Measure humidity; 1 : Measure DS18B20; 2 : Measure MPU6050
+//static bool   barBusy = FALSE;
 static uint8  humiState = 0;
 
 static bool   sysResetRequest = FALSE;
 
-static uint16 sensorMagPeriod = MAG_DEFAULT_PERIOD;
-static uint16 sensorAccPeriod = ACC_DEFAULT_PERIOD;
+//static uint16 sensorMagPeriod = MAG_DEFAULT_PERIOD;
+//static uint16 sensorAccPeriod = ACC_DEFAULT_PERIOD;
 static uint16 sensorTmpPeriod = TEMP_DEFAULT_PERIOD;
-static uint16 sensorHumPeriod = HUM_DEFAULT_PERIOD;
-static uint16 sensorBarPeriod = BAR_DEFAULT_PERIOD;
-static uint16 sensorGyrPeriod = GYRO_DEFAULT_PERIOD;
+static uint32 sensorHumPeriod = HUM_DEFAULT_PERIOD;
+//static uint16 sensorBarPeriod = BAR_DEFAULT_PERIOD;
+//static uint16 sensorGyrPeriod = GYRO_DEFAULT_PERIOD;
 
-static uint8  sensorGyroAxes = 0;
-static bool   sensorGyroUpdateAxes = FALSE;
+//static uint8  sensorGyroAxes = 0;
+//static bool   sensorGyroUpdateAxes = FALSE;
 static uint16 selfTestResult = 0;
 static bool   testMode = FALSE;
 
+static uint16 packetSize = 42;    // expected DMP packet size (default is 42 bytes)
+static uint16 fifoCount;     // count of all bytes currently in FIFO
+static uint8 fifoBuffer[64]; // FIFO storage buffer
+static uint8 mpuIntStatus;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
 static void sensorTag_ProcessOSALMsg( osal_event_hdr_t *pMsg );
 static void peripheralStateNotificationCB( gaprole_States_t newState );
 
-static void readIrTempData( void );
+//static void readIrTempData( void );
 static void readHumData( void );
-static void readAccData( void );
-static void readMagData( void );
-static void readBarData( void );
-static void readBarCalibration( void );
-static void readGyroData( void );
+//static void readAccData( void );
+//static void readMagData( void );
+//static void readBarData( void );
+//static void readBarCalibration( void );
+//static void readGyroData( void );
 
-static void barometerChangeCB( uint8 paramID );
-static void irTempChangeCB( uint8 paramID );
-static void accelChangeCB( uint8 paramID );
-static void humidityChangeCB( uint8 paramID);
-static void magnetometerChangeCB( uint8 paramID );
-static void gyroChangeCB( uint8 paramID );
+//static void barometerChangeCB( uint8 paramID );
+//static void irTempChangeCB( uint8 paramID );
+//static void accelChangeCB( uint8 paramID );
+//static void humidityChangeCB( uint8 paramID);
+//static void magnetometerChangeCB( uint8 paramID );
+//static void gyroChangeCB( uint8 paramID );
 #if defined FEATURE_TEST
 static void testChangeCB( uint8 paramID );
 #endif
 static void ccChangeCB( uint8 paramID );
 static void ccUpdate( void );
 static void gapRolesParamUpdateCB( uint16 connInterval, uint16 connSlaveLatency,
-                                  uint16 connTimeout );
+                                   uint16 connTimeout );
 
+static void md_ProfileChangeCB( uint8 paramID );
 static void resetSensorSetup( void );
 static void sensorTag_HandleKeys( uint8 shift, uint8 keys );
-static void resetCharacteristicValue( uint16 servID, uint8 paramID, uint8 value, 
-                                     uint8 paramLen );
+static void resetCharacteristicValue( uint16 servID, uint8 paramID, uint8 value,
+                                      uint8 paramLen );
 static void resetCharacteristicValues( void );
-
+static void resolve_command(void);
+//static void eggSerialAppSendNoti(uint8 *pBuffer, uint16 length);
 /*********************************************************************
  * PROFILE CALLBACKS
  */
@@ -304,63 +325,70 @@ static void resetCharacteristicValues( void );
 // GAP Role Callbacks
 static gapRolesCBs_t sensorTag_PeripheralCBs =
 {
-  peripheralStateNotificationCB,  // Profile State Change Callbacks
-  NULL                            // When a valid RSSI is read from controller (not used by application)
+    peripheralStateNotificationCB,  // Profile State Change Callbacks
+    NULL                            // When a valid RSSI is read from controller (not used by application)
 };
 
 // GAP Bond Manager Callbacks
 static gapBondCBs_t sensorTag_BondMgrCBs =
 {
-  NULL,                     // Passcode callback (not used by application)
-  NULL                      // Pairing / Bonding state Callback (not used by application)
+    NULL,                     // Passcode callback (not used by application)
+    NULL                      // Pairing / Bonding state Callback (not used by application)
 };
 
 // Simple GATT Profile Callbacks
+#if 0
 static sensorCBs_t sensorTag_BarometerCBs =
 {
-  barometerChangeCB,        // Characteristic value change callback
+    barometerChangeCB,        // Characteristic value change callback
 };
 
 static sensorCBs_t sensorTag_IrTempCBs =
 {
-  irTempChangeCB,           // Characteristic value change callback
+    irTempChangeCB,           // Characteristic value change callback
 };
 
 static sensorCBs_t sensorTag_AccelCBs =
 {
-  accelChangeCB,            // Characteristic value change callback
+    accelChangeCB,            // Characteristic value change callback
 };
 
 static sensorCBs_t sensorTag_HumidCBs =
 {
-  humidityChangeCB,         // Characteristic value change callback
+    humidityChangeCB,         // Characteristic value change callback
 };
 
 static sensorCBs_t sensorTag_MagnetometerCBs =
 {
-  magnetometerChangeCB,     // Characteristic value change callback
+    magnetometerChangeCB,     // Characteristic value change callback
 };
 
 static sensorCBs_t sensorTag_GyroCBs =
 {
-  gyroChangeCB,             // Characteristic value change callback
+    gyroChangeCB,             // Characteristic value change callback
 };
 
 #if defined FEATURE_TEST
 static testCBs_t sensorTag_TestCBs =
 {
-  testChangeCB,             // Charactersitic value change callback
+    testChangeCB,             // Charactersitic value change callback
 };
+#endif
 #endif
 
 static ccCBs_t sensorTag_ccCBs =
 {
- ccChangeCB,               // Charactersitic value change callback
+    ccChangeCB,               // Charactersitic value change callback
 };
 
 static gapRolesParamUpdateCB_t paramUpdateCB =
 {
-  gapRolesParamUpdateCB,
+    gapRolesParamUpdateCB,
+};
+
+static const mdProfileCBs_t MDProfileCB =
+{
+    md_ProfileChangeCB
 };
 
 /*********************************************************************
@@ -383,126 +411,141 @@ static gapRolesParamUpdateCB_t paramUpdateCB =
  */
 void SensorTag_Init( uint8 task_id )
 {
-  sensorTag_TaskID = task_id;
+    sensorTag_TaskID = task_id;
 
-  // Setup the GAP
-  VOID GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, DEFAULT_CONN_PAUSE_PERIPHERAL );
+    // Setup the GAP
+    VOID GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, DEFAULT_CONN_PAUSE_PERIPHERAL );
 
-  // Setup the GAP Peripheral Role Profile
-  {
-    // Device starts advertising upon initialization
-    uint8 initial_advertising_enable = FALSE;
+    // Setup the GAP Peripheral Role Profile
+    {
+        // Device starts advertising upon initialization
+        uint8 initial_advertising_enable = TRUE;
 
-    // By setting this to zero, the device will go into the waiting state after
-    // being discoverable for 30.72 second, and will not being advertising again
-    // until the enabler is set back to TRUE
-    uint16 gapRole_AdvertOffTime = 0;
-    uint8 enable_update_request = DEFAULT_ENABLE_UPDATE_REQUEST;
-    uint16 desired_min_interval = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
-    uint16 desired_max_interval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
-    uint16 desired_slave_latency = DEFAULT_DESIRED_SLAVE_LATENCY;
-    uint16 desired_conn_timeout = DEFAULT_DESIRED_CONN_TIMEOUT;
+        // By setting this to zero, the device will go into the waiting state after
+        // being discoverable for 30.72 second, and will not being advertising again
+        // until the enabler is set back to TRUE
+        uint16 gapRole_AdvertOffTime = 1;
+        uint8 enable_update_request = DEFAULT_ENABLE_UPDATE_REQUEST;
+        uint16 desired_min_interval = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
+        uint16 desired_max_interval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
+        uint16 desired_slave_latency = DEFAULT_DESIRED_SLAVE_LATENCY;
+        uint16 desired_conn_timeout = DEFAULT_DESIRED_CONN_TIMEOUT;
 
-    // Set the GAP Role Parameters
-    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &initial_advertising_enable );
-    GAPRole_SetParameter( GAPROLE_ADVERT_OFF_TIME, sizeof( uint16 ), &gapRole_AdvertOffTime );
+        // Set the GAP Role Parameters
+        GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &initial_advertising_enable );
+        GAPRole_SetParameter( GAPROLE_ADVERT_OFF_TIME, sizeof( uint16 ), &gapRole_AdvertOffTime );
+        GAPRole_SetParameter( GAPROLE_SCAN_RSP_DATA, sizeof ( scanRspData ), scanRspData );
+        GAPRole_SetParameter( GAPROLE_ADVERT_DATA, sizeof( advertData ), advertData );
 
-    GAPRole_SetParameter( GAPROLE_SCAN_RSP_DATA, sizeof ( scanRspData ), scanRspData );
-    GAPRole_SetParameter( GAPROLE_ADVERT_DATA, sizeof( advertData ), advertData );
+        GAPRole_SetParameter( GAPROLE_PARAM_UPDATE_ENABLE, sizeof( uint8 ), &enable_update_request );
+        GAPRole_SetParameter( GAPROLE_MIN_CONN_INTERVAL, sizeof( uint16 ), &desired_min_interval );
+        GAPRole_SetParameter( GAPROLE_MAX_CONN_INTERVAL, sizeof( uint16 ), &desired_max_interval );
+        GAPRole_SetParameter( GAPROLE_SLAVE_LATENCY, sizeof( uint16 ), &desired_slave_latency );
+        GAPRole_SetParameter( GAPROLE_TIMEOUT_MULTIPLIER, sizeof( uint16 ), &desired_conn_timeout );
+    }
 
-    GAPRole_SetParameter( GAPROLE_PARAM_UPDATE_ENABLE, sizeof( uint8 ), &enable_update_request );
-    GAPRole_SetParameter( GAPROLE_MIN_CONN_INTERVAL, sizeof( uint16 ), &desired_min_interval );
-    GAPRole_SetParameter( GAPROLE_MAX_CONN_INTERVAL, sizeof( uint16 ), &desired_max_interval );
-    GAPRole_SetParameter( GAPROLE_SLAVE_LATENCY, sizeof( uint16 ), &desired_slave_latency );
-    GAPRole_SetParameter( GAPROLE_TIMEOUT_MULTIPLIER, sizeof( uint16 ), &desired_conn_timeout );
-  }
+    // Set the GAP Characteristics
+    GGS_SetParameter( GGS_DEVICE_NAME_ATT, sizeof(attDeviceName), attDeviceName );
 
-  // Set the GAP Characteristics
-  GGS_SetParameter( GGS_DEVICE_NAME_ATT, sizeof(attDeviceName), attDeviceName );
+    // Set advertising interval
+    {
+        uint16 advInt = DEFAULT_ADVERTISING_INTERVAL;
 
-  // Set advertising interval
-  {
-    uint16 advInt = DEFAULT_ADVERTISING_INTERVAL;
+        GAP_SetParamValue( TGAP_LIM_DISC_ADV_INT_MIN, advInt );
+        GAP_SetParamValue( TGAP_LIM_DISC_ADV_INT_MAX, advInt );
+        GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, advInt );
+        GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, advInt );
+    }
 
-    GAP_SetParamValue( TGAP_LIM_DISC_ADV_INT_MIN, advInt );
-    GAP_SetParamValue( TGAP_LIM_DISC_ADV_INT_MAX, advInt );
-    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, advInt );
-    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, advInt );
-  }
+    // Setup the GAP Bond Manager
+    {
+        uint32 passkey = 0; // passkey "000000"
+        uint8 pairMode = GAPBOND_PAIRING_MODE_WAIT_FOR_REQ;
+        uint8 mitm = TRUE;
+        uint8 ioCap = GAPBOND_IO_CAP_DISPLAY_ONLY;
+        uint8 bonding = TRUE;
 
-  // Setup the GAP Bond Manager
-  {
-    uint32 passkey = 0; // passkey "000000"
-    uint8 pairMode = GAPBOND_PAIRING_MODE_WAIT_FOR_REQ;
-    uint8 mitm = TRUE;
-    uint8 ioCap = GAPBOND_IO_CAP_DISPLAY_ONLY;
-    uint8 bonding = TRUE;
-
-    GAPBondMgr_SetParameter( GAPBOND_DEFAULT_PASSCODE, sizeof ( uint32 ), &passkey );
-    GAPBondMgr_SetParameter( GAPBOND_PAIRING_MODE, sizeof ( uint8 ), &pairMode );
-    GAPBondMgr_SetParameter( GAPBOND_MITM_PROTECTION, sizeof ( uint8 ), &mitm );
-    GAPBondMgr_SetParameter( GAPBOND_IO_CAPABILITIES, sizeof ( uint8 ), &ioCap );
-    GAPBondMgr_SetParameter( GAPBOND_BONDING_ENABLED, sizeof ( uint8 ), &bonding );
-  }
+        GAPBondMgr_SetParameter( GAPBOND_DEFAULT_PASSCODE, sizeof ( uint32 ), &passkey );
+        GAPBondMgr_SetParameter( GAPBOND_PAIRING_MODE, sizeof ( uint8 ), &pairMode );
+        GAPBondMgr_SetParameter( GAPBOND_MITM_PROTECTION, sizeof ( uint8 ), &mitm );
+        GAPBondMgr_SetParameter( GAPBOND_IO_CAPABILITIES, sizeof ( uint8 ), &ioCap );
+        GAPBondMgr_SetParameter( GAPBOND_BONDING_ENABLED, sizeof ( uint8 ), &bonding );
+    }
 
 
-  // Add services
-  GGS_AddService( GATT_ALL_SERVICES );            // GAP
-  GATTServApp_AddService( GATT_ALL_SERVICES );    // GATT attributes
-  DevInfo_AddService();                           // Device Information Service
-  IRTemp_AddService();                            // IR Temperature Service
-  Accel_AddService();                             // Accelerometer Service
-  Humidity_AddService();                          // Humidity Service
-  Magnetometer_AddService();                      // Magnetometer Service
-  Barometer_AddService();                         // Barometer Service
-  Gyro_AddService();                              // Gyro Service
-  SK_AddService( GATT_ALL_SERVICES );             // Simple Keys Profile
+    // Add services
+    GGS_AddService( GATT_ALL_SERVICES );            // GAP
+    GATTServApp_AddService( GATT_ALL_SERVICES );    // GATT attributes
+    DevInfo_AddService();                           // Device Information Service
+#if 0
+    IRTemp_AddService();                            // IR Temperature Service
+    Accel_AddService();                             // Accelerometer Service
+    Humidity_AddService();                          // Humidity Service
+    Magnetometer_AddService();                      // Magnetometer Service
+    Barometer_AddService();                         // Barometer Service
+    Gyro_AddService();                              // Gyro Service
+    SK_AddService( GATT_ALL_SERVICES );             // Simple Keys Profile
 #if defined FEATURE_TEST
-  Test_AddService();                              // Test Profile
+    Test_AddService();                              // Test Profile
 #endif
-  CcService_AddService();                         // Connection Control Service
-
+#endif
+    CcService_AddService();                         // Connection Control Service
+    MDProfile_AddService();
 #if defined FEATURE_OAD
-  VOID OADTarget_AddService();                    // OAD Profile
+    VOID OADTarget_AddService();                    // OAD Profile
 #endif
+#if 0
+    // Setup the Seensor Profile Characteristic Values
+    resetCharacteristicValues();
 
-  // Setup the Seensor Profile Characteristic Values
-  resetCharacteristicValues();
-
-  // Register for all key events - This app will handle all key events
-  RegisterForKeys( sensorTag_TaskID );
-
-  // makes sure LEDs are off
-  HalLedSet( (HAL_LED_1 | HAL_LED_2), HAL_LED_MODE_OFF );
-
-  // Initialise sensor drivers
-  HALIRTempInit();
-  HalHumiInit();
-  HalMagInit();
-  HalAccInit();
-  HalBarInit();
-  HalGyroInit();
-
-  // Register callbacks with profile
-  VOID IRTemp_RegisterAppCBs( &sensorTag_IrTempCBs );
-  VOID Magnetometer_RegisterAppCBs( &sensorTag_MagnetometerCBs );
-  VOID Accel_RegisterAppCBs( &sensorTag_AccelCBs );
-  VOID Humidity_RegisterAppCBs( &sensorTag_HumidCBs );
-  VOID Barometer_RegisterAppCBs( &sensorTag_BarometerCBs );
-  VOID Gyro_RegisterAppCBs( &sensorTag_GyroCBs );
-#if defined FEATURE_TEST  
-  VOID Test_RegisterAppCBs( &sensorTag_TestCBs );
+    // Register for all key events - This app will handle all key events
+    RegisterForKeys( sensorTag_TaskID );
 #endif
-  VOID CcService_RegisterAppCBs( &sensorTag_ccCBs );
-  VOID GAPRole_RegisterAppCBs( &paramUpdateCB );
+    // makes sure LEDs are off
+    HalLedSet( (HAL_LED_1 | HAL_LED_2), HAL_LED_MODE_OFF );
+    HalHumiInit();
+#if 0
+    // Initialise sensor drivers
+    HALIRTempInit();
+    HalMagInit();
+    HalAccInit();
+    HalBarInit();
+    HalGyroInit();
 
-  // Enable clock divide on halt
-  // This reduces active current while radio is active and CC254x MCU
-  // is halted
-  HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );
+    // Register callbacks with profile
+    VOID IRTemp_RegisterAppCBs( &sensorTag_IrTempCBs );
+    VOID Magnetometer_RegisterAppCBs( &sensorTag_MagnetometerCBs );
+    VOID Accel_RegisterAppCBs( &sensorTag_AccelCBs );
+    VOID Humidity_RegisterAppCBs( &sensorTag_HumidCBs );
+    VOID Barometer_RegisterAppCBs( &sensorTag_BarometerCBs );
+    VOID Gyro_RegisterAppCBs( &sensorTag_GyroCBs );
+#if defined FEATURE_TEST
+    VOID Test_RegisterAppCBs( &sensorTag_TestCBs );
+#endif
+#endif
+    MDProfile_RegisterAppCBs((mdProfileCBs_t *)&MDProfileCB);
+    VOID CcService_RegisterAppCBs( &sensorTag_ccCBs );
+    VOID GAPRole_RegisterAppCBs( &paramUpdateCB );
 
-  // Setup a delayed profile startup
-  osal_set_event( sensorTag_TaskID, ST_START_DEVICE_EVT );
+    P0SEL = 0x00; // Configure Port 0 as GPIO
+    P1SEL = 0x00; // Configure Port 1 as GPIO
+    P2SEL = 0;    // Configure Port 2 as GPIO
+
+    // Port Direction,  0: Input,  1: Output
+    P0DIR = 0xFF;
+    P1DIR = 0xFF;
+    P2DIR = 0x1F;
+
+    P0 = 0x00; // All pins on port 0 to low
+    P1 = 0x00; // All pins on port 1 to low
+    P2 = 0;   // All pins on port 2 to low
+    // Enable clock divide on halt
+    // This reduces active current while radio is active and CC254x MCU
+    // is halted
+    //HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );
+
+    // Setup a delayed profile startup
+    osal_set_event( sensorTag_TaskID, ST_START_DEVICE_EVT );
 }
 
 /*********************************************************************
@@ -520,241 +563,264 @@ void SensorTag_Init( uint8 task_id )
  */
 uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
 {
-  VOID task_id; // OSAL required parameter that isn't used in this function
+    VOID task_id; // OSAL required parameter that isn't used in this function
 
-  if ( events & SYS_EVENT_MSG )
-  {
-    uint8 *pMsg;
-
-    if ( (pMsg = osal_msg_receive( sensorTag_TaskID )) != NULL )
+    if ( events & SYS_EVENT_MSG )
     {
-      sensorTag_ProcessOSALMsg( (osal_event_hdr_t *)pMsg );
+        uint8 *pMsg;
 
-      // Release the OSAL message
-      VOID osal_msg_deallocate( pMsg );
-    }
-
-    // return unprocessed events
-    return (events ^ SYS_EVENT_MSG);
-  }
-
-  // Handle system reset (long press on side key)
-  if ( events & ST_SYS_RESET_EVT )
-  {
-    if (sysResetRequest)
-    {
-      HAL_SYSTEM_RESET();
-    }
-    return ( events ^ ST_SYS_RESET_EVT );
-  }
-
-  if ( events & ST_START_DEVICE_EVT )
-  {
-    // Start the Device
-    VOID GAPRole_StartDevice( &sensorTag_PeripheralCBs );
-
-    // Start Bond Manager
-    VOID GAPBondMgr_Register( &sensorTag_BondMgrCBs );
-
-    return ( events ^ ST_START_DEVICE_EVT );
-  }
-
-  //////////////////////////
-  //    IR TEMPERATURE    //
-  //////////////////////////
-  if ( events & ST_IRTEMPERATURE_READ_EVT )
-  {
-    if ( irTempEnabled )
-    {
-      if (HalIRTempStatus() == TMP006_DATA_READY)
-      {
-        readIrTempData();
-        osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, sensorTmpPeriod-TEMP_MEAS_DELAY );
-      }
-      else if (HalIRTempStatus() == TMP006_OFF)
-      {
-        HalIRTempTurnOn();
-        osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, TEMP_MEAS_DELAY );
-      }
-    }
-    else
-    {
-      //Turn off Temperatur sensor
-      VOID HalIRTempTurnOff();
-      VOID resetCharacteristicValue(IRTEMPERATURE_SERV_UUID,SENSOR_DATA,0,IRTEMPERATURE_DATA_LEN);
-      VOID resetCharacteristicValue(IRTEMPERATURE_SERV_UUID,SENSOR_CONF,ST_CFG_SENSOR_DISABLE,sizeof ( uint8 ));
-    }
-
-    return (events ^ ST_IRTEMPERATURE_READ_EVT);
-  }
-
-  //////////////////////////
-  //    Accelerometer     //
-  //////////////////////////
-  if ( events & ST_ACCELEROMETER_SENSOR_EVT )
-  {
-    if(accConfig != ST_CFG_SENSOR_DISABLE)
-    {
-      readAccData();
-      osal_start_timerEx( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT, sensorAccPeriod );
-    }
-    else
-    {
-      VOID resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_DATA, 0, ACCELEROMETER_DATA_LEN );
-      VOID resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-    }
-
-    return (events ^ ST_ACCELEROMETER_SENSOR_EVT);
-  }
-
-  //////////////////////////
-  //      Humidity        //
-  //////////////////////////
-  if ( events & ST_HUMIDITY_SENSOR_EVT )
-  {
-    if (humiEnabled)
-    {
-      HalHumiExecMeasurementStep(humiState);
-      if (humiState == 2)
-      {
-        readHumData();
-        humiState = 0;
-        osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, sensorHumPeriod );
-      }
-      else
-      {
-        humiState++;
-        osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, HUM_FSM_PERIOD );
-      }
-    }
-    else
-    {
-      resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_DATA, 0, HUMIDITY_DATA_LEN);
-      resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-    }
-
-    return (events ^ ST_HUMIDITY_SENSOR_EVT);
-  }
-
-  //////////////////////////
-  //      Magnetometer    //
-  //////////////////////////
-  if ( events & ST_MAGNETOMETER_SENSOR_EVT )
-  {
-    if(magEnabled)
-    {
-      if (HalMagStatus() == MAG3110_DATA_READY)
-      {
-        readMagData();
-      }
-      else if (HalMagStatus() == MAG3110_OFF)
-      {
-        HalMagTurnOn();
-      }
-
-      osal_start_timerEx( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT, sensorMagPeriod );
-    }
-    else
-    {
-      HalMagTurnOff();
-      resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_DATA, 0, MAGNETOMETER_DATA_LEN);
-      resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-    }
-
-    return (events ^ ST_MAGNETOMETER_SENSOR_EVT);
-  }
-
-  //////////////////////////
-  //        Barometer     //
-  //////////////////////////
-  if ( events & ST_BAROMETER_SENSOR_EVT )
-  {
-    if (barEnabled)
-    {
-      if (barBusy)
-      {
-        barBusy = FALSE;
-        readBarData();
-        osal_start_timerEx( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT, sensorBarPeriod );
-      }
-      else
-      {
-        barBusy = TRUE;
-        HalBarStartMeasurement();
-        osal_start_timerEx( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT, BAR_FSM_PERIOD );
-      }
-    }
-    else
-    {
-      resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_DATA, 0, BAROMETER_DATA_LEN);
-      resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-      resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CALB, 0, BAROMETER_CALI_LEN);
-    }
-
-    return (events ^ ST_BAROMETER_SENSOR_EVT);
-  }
-
-  //////////////////////////
-  //      Gyroscope       //
-  //////////////////////////
-  if ( events & ST_GYROSCOPE_SENSOR_EVT )
-  {
-    uint8 status;
-
-    status = HalGyroStatus();
-
-    if(gyroEnabled)
-    {
-      if (status == HAL_GYRO_STOPPED)
-      {
-        HalGyroSelectAxes(sensorGyroAxes);
-        HalGyroTurnOn();
-        osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, GYRO_STARTUP_TIME);
-      }
-      else
-      {
-        if(sensorGyroUpdateAxes)
+        if ( (pMsg = osal_msg_receive( sensorTag_TaskID )) != NULL )
         {
-          HalGyroSelectAxes(sensorGyroAxes);
-          sensorGyroUpdateAxes = FALSE;
+            sensorTag_ProcessOSALMsg( (osal_event_hdr_t *)pMsg );
+
+            // Release the OSAL message
+            VOID osal_msg_deallocate( pMsg );
         }
 
-        if (status == HAL_GYRO_DATA_READY)
+        // return unprocessed events
+        return (events ^ SYS_EVENT_MSG);
+    }
+
+    // Handle system reset (long press on side key)
+    if ( events & ST_SYS_RESET_EVT )
+    {
+        if (sysResetRequest)
         {
-          readGyroData();
-          osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, sensorGyrPeriod - GYRO_STARTUP_TIME);
+            HAL_SYSTEM_RESET();
+        }
+        return ( events ^ ST_SYS_RESET_EVT );
+    }
+
+    if ( events & ST_START_DEVICE_EVT )
+    {
+        // Start the Device
+        VOID GAPRole_StartDevice( &sensorTag_PeripheralCBs );
+
+        // Start Bond Manager
+        VOID GAPBondMgr_Register( &sensorTag_BondMgrCBs );
+
+        HALLM75ATempInit();
+        EggLM75ATempInit();
+        return ( events ^ ST_START_DEVICE_EVT );
+    }
+#if 0
+    //////////////////////////
+    //    IR TEMPERATURE    //
+    //////////////////////////
+    if ( events & ST_IRTEMPERATURE_READ_EVT )
+    {
+        if ( irTempEnabled )
+        {
+            if (HalIRTempStatus() == TMP006_DATA_READY)
+            {
+                readIrTempData();
+                osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, sensorTmpPeriod - TEMP_MEAS_DELAY );
+            }
+            else if (HalIRTempStatus() == TMP006_OFF)
+            {
+                HalIRTempTurnOn();
+                osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, TEMP_MEAS_DELAY );
+            }
         }
         else
         {
-          // Gyro needs to be activated;
-          HalGyroWakeUp();
-          osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, GYRO_STARTUP_TIME);
+            //Turn off Temperatur sensor
+            VOID HalIRTempTurnOff();
+            VOID resetCharacteristicValue(IRTEMPERATURE_SERV_UUID, SENSOR_DATA, 0, IRTEMPERATURE_DATA_LEN);
+            VOID resetCharacteristicValue(IRTEMPERATURE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
         }
-      }
+
+        return (events ^ ST_IRTEMPERATURE_READ_EVT);
     }
-    else
+
+    //////////////////////////
+    //    Accelerometer     //
+    //////////////////////////
+    if ( events & ST_ACCELEROMETER_SENSOR_EVT )
     {
-      HalGyroTurnOff();
-      resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_DATA, 0, GYROSCOPE_DATA_LEN);
-      resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof( uint8 ));
+        if(accConfig != ST_CFG_SENSOR_DISABLE)
+        {
+            readAccData();
+            osal_start_timerEx( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT, sensorAccPeriod );
+        }
+        else
+        {
+            VOID resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_DATA, 0, ACCELEROMETER_DATA_LEN );
+            VOID resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+        }
+
+        return (events ^ ST_ACCELEROMETER_SENSOR_EVT);
+    }
+#endif
+    //////////////////////////
+    //      Humidity        //
+    //////////////////////////
+    if ( events & ST_HUMIDITY_SENSOR_EVT )
+    {
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_HUMIDITY_SENSOR_EVT);
+        }
+        if (humiEnabled)
+        {
+            if (gEggState == EGG_STATE_MEASURE_MPU6050 ||
+                    gEggState == EGG_STATE_MEASURE_LM75A)
+            {
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, 1000 );//Try again after 1000ms.
+                return (events ^ ST_HUMIDITY_SENSOR_EVT);
+            }
+            gEggState = EGG_STATE_MEASURE_HUMIDITY;
+            bool returnValue = HalHumiExecMeasurementStep(humiState);
+            /*if (!returnValue)
+            {
+              gEggState = EGG_STATE_MEASURE_IDLE;
+              humiState = 0;
+              osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, sensorHumPeriod );
+              return (events ^ ST_HUMIDITY_SENSOR_EVT);
+            }*/
+            if (humiState == 2)
+            {
+                readHumData();
+                humiState = 0;
+                gEggState = EGG_STATE_MEASURE_IDLE;
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, sensorHumPeriod );
+            }
+            else
+            {
+                humiState++;
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, HUM_FSM_PERIOD );
+            }
+        }
+        else
+        {
+            #if 0
+            resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_DATA, 0, HUMIDITY_DATA_LEN);
+            resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+            #endif
+            HalHumiInit();
+        }
+        return (events ^ ST_HUMIDITY_SENSOR_EVT);
+    }
+#if 0
+    //////////////////////////
+    //      Magnetometer    //
+    //////////////////////////
+    if ( events & ST_MAGNETOMETER_SENSOR_EVT )
+    {
+        if(magEnabled)
+        {
+            if (HalMagStatus() == MAG3110_DATA_READY)
+            {
+                readMagData();
+            }
+            else if (HalMagStatus() == MAG3110_OFF)
+            {
+                HalMagTurnOn();
+            }
+
+            osal_start_timerEx( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT, sensorMagPeriod );
+        }
+        else
+        {
+            HalMagTurnOff();
+            resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_DATA, 0, MAGNETOMETER_DATA_LEN);
+            resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+        }
+
+        return (events ^ ST_MAGNETOMETER_SENSOR_EVT);
     }
 
-    return (events ^ ST_GYROSCOPE_SENSOR_EVT);
-  }
+    //////////////////////////
+    //        Barometer     //
+    //////////////////////////
+    if ( events & ST_BAROMETER_SENSOR_EVT )
+    {
+        if (barEnabled)
+        {
+            if (barBusy)
+            {
+                barBusy = FALSE;
+                readBarData();
+                osal_start_timerEx( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT, sensorBarPeriod );
+            }
+            else
+            {
+                barBusy = TRUE;
+                HalBarStartMeasurement();
+                osal_start_timerEx( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT, BAR_FSM_PERIOD );
+            }
+        }
+        else
+        {
+            resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_DATA, 0, BAROMETER_DATA_LEN);
+            resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+            resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CALB, 0, BAROMETER_CALI_LEN);
+        }
 
+        return (events ^ ST_BAROMETER_SENSOR_EVT);
+    }
+
+    //////////////////////////
+    //      Gyroscope       //
+    //////////////////////////
+    if ( events & ST_GYROSCOPE_SENSOR_EVT )
+    {
+        uint8 status;
+
+        status = HalGyroStatus();
+
+        if(gyroEnabled)
+        {
+            if (status == HAL_GYRO_STOPPED)
+            {
+                HalGyroSelectAxes(sensorGyroAxes);
+                HalGyroTurnOn();
+                osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, GYRO_STARTUP_TIME);
+            }
+            else
+            {
+                if(sensorGyroUpdateAxes)
+                {
+                    HalGyroSelectAxes(sensorGyroAxes);
+                    sensorGyroUpdateAxes = FALSE;
+                }
+
+                if (status == HAL_GYRO_DATA_READY)
+                {
+                    readGyroData();
+                    osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, sensorGyrPeriod - GYRO_STARTUP_TIME);
+                }
+                else
+                {
+                    // Gyro needs to be activated;
+                    HalGyroWakeUp();
+                    osal_start_timerEx( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT, GYRO_STARTUP_TIME);
+                }
+            }
+        }
+        else
+        {
+            HalGyroTurnOff();
+            resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_DATA, 0, GYROSCOPE_DATA_LEN);
+            resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof( uint8 ));
+        }
+
+        return (events ^ ST_GYROSCOPE_SENSOR_EVT);
+    }
+#endif
 #if defined ( PLUS_BROADCASTER )
-  if ( events & ST_ADV_IN_CONNECTION_EVT )
-  {
-    uint8 turnOnAdv = TRUE;
-    // Turn on advertising while in a connection
-    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &turnOnAdv );
+    if ( events & ST_ADV_IN_CONNECTION_EVT )
+    {
+        uint8 turnOnAdv = TRUE;
+        // Turn on advertising while in a connection
+        GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &turnOnAdv );
 
-    return (events ^ ST_ADV_IN_CONNECTION_EVT);
-  }
+        return (events ^ ST_ADV_IN_CONNECTION_EVT);
+    }
 #endif // PLUS_BROADCASTER
 
-  // Discard unknown events
-  return 0;
+    // Discard unknown events
+    return 0;
 }
 
 /*********************************************************************
@@ -768,13 +834,13 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
  */
 uint16 sensorTag_test(void)
 {
-  selfTestResult = HalSensorTest();
-  HalLedSet(HAL_LED_2,HAL_LED_MODE_OFF);
+    selfTestResult = HalSensorTest();
+    HalLedSet(HAL_LED_2, HAL_LED_MODE_OFF);
 #if defined FEATURE_TEST
-  // Write the self-test result to the test service
-  Test_SetParameter( TEST_DATA_ATTR, TEST_DATA_LEN, &selfTestResult);
+    // Write the self-test result to the test service
+    Test_SetParameter( TEST_DATA_ATTR, TEST_DATA_LEN, &selfTestResult);
 #endif
-  return selfTestResult;
+    return selfTestResult;
 }
 
 /*********************************************************************
@@ -793,16 +859,16 @@ uint16 sensorTag_test(void)
  */
 static void sensorTag_ProcessOSALMsg( osal_event_hdr_t *pMsg )
 {
-  switch ( pMsg->event )
-  {
+    switch ( pMsg->event )
+    {
     case KEY_CHANGE:
-      sensorTag_HandleKeys( ((keyChange_t *)pMsg)->state, ((keyChange_t *)pMsg)->keys );
-      break;
+        sensorTag_HandleKeys( ((keyChange_t *)pMsg)->state, ((keyChange_t *)pMsg)->keys );
+        break;
 
     default:
-      // do nothing
-      break;
-  }
+        // do nothing
+        break;
+    }
 }
 
 /*********************************************************************
@@ -819,79 +885,79 @@ static void sensorTag_ProcessOSALMsg( osal_event_hdr_t *pMsg )
  */
 static void sensorTag_HandleKeys( uint8 shift, uint8 keys )
 {
-  uint8 SK_Keys = 0;
-  VOID shift;  // Intentionally unreferenced parameter
+    uint8 SK_Keys = 0;
+    VOID shift;  // Intentionally unreferenced parameter
 
-  if (keys & HAL_KEY_SW_1)
-  {
-    // Reset the system if side key is pressed for more than 3 seconds
-    sysResetRequest = TRUE;
-    osal_start_timerEx( sensorTag_TaskID, ST_SYS_RESET_EVT, ST_SYS_RESET_DELAY );
-
-    if (!testMode ) // Side key
+    if (keys & HAL_KEY_SW_1)
     {
-      // If device is not in a connection, pressing the side key should toggle
-      //  advertising on and off
-      if ( gapProfileState != GAPROLE_CONNECTED )
-      {
-        uint8 current_adv_enabled_status;
-        uint8 new_adv_enabled_status;
+        // Reset the system if side key is pressed for more than 3 seconds
+        sysResetRequest = TRUE;
+        osal_start_timerEx( sensorTag_TaskID, ST_SYS_RESET_EVT, ST_SYS_RESET_DELAY );
 
-        // Find the current GAP advertising status
-        GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &current_adv_enabled_status );
-
-        if( current_adv_enabled_status == FALSE )
+        if (!testMode ) // Side key
         {
-          new_adv_enabled_status = TRUE;
+            // If device is not in a connection, pressing the side key should toggle
+            //  advertising on and off
+            if ( gapProfileState != GAPROLE_CONNECTED )
+            {
+                uint8 current_adv_enabled_status;
+                uint8 new_adv_enabled_status;
+
+                // Find the current GAP advertising status
+                GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &current_adv_enabled_status );
+
+                if( current_adv_enabled_status == FALSE )
+                {
+                    new_adv_enabled_status = TRUE;
+                }
+                else
+                {
+                    new_adv_enabled_status = FALSE;
+                }
+
+                // Change the GAP advertisement status to opposite of current status
+                GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &new_adv_enabled_status );
+            }
+
+            if ( gapProfileState == GAPROLE_CONNECTED )
+            {
+                uint8 adv_enabled = TRUE;
+
+                // Disconnect
+                GAPRole_TerminateConnection();
+                // Start advertising
+                GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );
+            }
         }
         else
         {
-          new_adv_enabled_status = FALSE;
+            // Test mode
+            if ( keys & HAL_KEY_SW_1 ) // Side key
+            {
+                SK_Keys |= SK_KEY_SIDE;
+            }
         }
-
-        // Change the GAP advertisement status to opposite of current status
-        GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &new_adv_enabled_status );
-      }
-
-      if ( gapProfileState == GAPROLE_CONNECTED )
-      {
-        uint8 adv_enabled = TRUE;
-
-        // Disconnect
-        GAPRole_TerminateConnection();
-        // Start advertising
-        GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );
-      }
     }
-    else
+
+    if ( keys & HAL_KEY_SW_2 )   // Carbon S2
     {
-      // Test mode
-      if ( keys & HAL_KEY_SW_1 ) // Side key
-      {
-        SK_Keys |= SK_KEY_SIDE;
-      }
+        SK_Keys |= SK_KEY_LEFT;
     }
-  }
 
-  if ( keys & HAL_KEY_SW_2 )   // Carbon S2
-  {
-    SK_Keys |= SK_KEY_LEFT;
-  }
+    if ( keys & HAL_KEY_SW_3 )   // Carbon S3
+    {
+        SK_Keys |= SK_KEY_RIGHT;
+    }
 
-  if ( keys & HAL_KEY_SW_3 )   // Carbon S3
-  {
-    SK_Keys |= SK_KEY_RIGHT;
-  }
+    if (!(keys & HAL_KEY_SW_1))
+    {
+        // Cancel system reset request
+        sysResetRequest = FALSE;
+    }
 
-  if (!(keys & HAL_KEY_SW_1))
-  {
-    // Cancel system reset request
-    sysResetRequest = FALSE;
-  }
-
-  // Set the value of the keys state to the Simple Keys Profile;
-  // This will send out a notification of the keys state if enabled
-  SK_SetParameter( SK_KEY_ATTR, sizeof ( uint8 ), &SK_Keys );
+    // Set the value of the keys state to the Simple Keys Profile;
+    // This will send out a notification of the keys state if enabled
+    SK_SetParameter( SK_KEY_ATTR, sizeof ( uint8 ), &SK_Keys );
 }
 
 
@@ -906,48 +972,58 @@ static void sensorTag_HandleKeys( uint8 shift, uint8 keys )
  */
 static void resetSensorSetup (void)
 {
-  if (HalIRTempStatus()!=TMP006_OFF || irTempEnabled)
-  {
-    HalIRTempTurnOff();
-    irTempEnabled = FALSE;
-  }
+    #if 0
+    if (HalIRTempStatus() != TMP006_OFF || irTempEnabled)
+    {
+        HalIRTempTurnOff();
+        irTempEnabled = FALSE;
+    }
 
-  if (accConfig != ST_CFG_SENSOR_DISABLE)
-  {
-    accConfig = ST_CFG_SENSOR_DISABLE;
-  }
+    if (accConfig != ST_CFG_SENSOR_DISABLE)
+    {
+        accConfig = ST_CFG_SENSOR_DISABLE;
+    }
+    #endif
+    if (mpu6050Config != ST_CFG_SENSOR_DISABLE)
+    {
+        mpu6050Config = ST_CFG_SENSOR_DISABLE;
+    }
+    #if 0
+    if (HalMagStatus() != MAG3110_OFF || magEnabled)
+    {
+        HalMagTurnOff();
+        magEnabled = FALSE;
+    }
 
-  if (HalMagStatus()!=MAG3110_OFF || magEnabled)
-  {
-    HalMagTurnOff();
-    magEnabled = FALSE;
-  }
+    if (gyroEnabled)
+    {
+        HalGyroTurnOff();
+        gyroEnabled = FALSE;
+    }
 
-  if (gyroEnabled)
-  {
-    HalGyroTurnOff();
-    gyroEnabled = FALSE;
-  }
+    if (barEnabled)
+    {
+        HalBarInit();
+        barEnabled = FALSE;
+    }
+    #endif
+    if (lm75Enabled)
+    {
+        lm75Enabled = FALSE;
+    }
+    if (humiEnabled)
+    {
+        HalHumiInit();
+        humiEnabled = FALSE;
+    }
 
-  if (barEnabled)
-  {
-    HalBarInit();
-    barEnabled = FALSE;
-  }
+    // Reset internal states
+    //sensorGyroAxes = 0;
+    //sensorGyroUpdateAxes = FALSE;
+    testMode = FALSE;
 
-  if (humiEnabled)
-  {
-    HalHumiInit();
-    humiEnabled = FALSE;
-  }
-
-  // Reset internal states
-  sensorGyroAxes = 0;
-  sensorGyroUpdateAxes = FALSE;
-  testMode = FALSE;
-
-  // Reset all characteristics values
-  resetCharacteristicValues();
+    // Reset all characteristics values
+    //resetCharacteristicValues();
 }
 
 
@@ -962,54 +1038,56 @@ static void resetSensorSetup (void)
  */
 static void peripheralStateNotificationCB( gaprole_States_t newState )
 {
-  switch ( newState )
-  {
+    switch ( newState )
+    {
     case GAPROLE_STARTED:
     {
-      uint8 ownAddress[B_ADDR_LEN];
-      uint8 systemId[DEVINFO_SYSTEM_ID_LEN];
+        uint8 ownAddress[B_ADDR_LEN];
+        uint8 systemId[DEVINFO_SYSTEM_ID_LEN];
 
-      GAPRole_GetParameter(GAPROLE_BD_ADDR, ownAddress);
+        GAPRole_GetParameter(GAPROLE_BD_ADDR, ownAddress);
 
-      // use 6 bytes of device address for 8 bytes of system ID value
-      systemId[0] = ownAddress[0];
-      systemId[1] = ownAddress[1];
-      systemId[2] = ownAddress[2];
+        // use 6 bytes of device address for 8 bytes of system ID value
+        systemId[0] = ownAddress[0];
+        systemId[1] = ownAddress[1];
+        systemId[2] = ownAddress[2];
 
-      // set middle bytes to zero
-      systemId[4] = 0x00;
-      systemId[3] = 0x00;
+        // set middle bytes to zero
+        systemId[4] = 0x00;
+        systemId[3] = 0x00;
 
-      // shift three bytes up
-      systemId[7] = ownAddress[5];
-      systemId[6] = ownAddress[4];
-      systemId[5] = ownAddress[3];
+        // shift three bytes up
+        systemId[7] = ownAddress[5];
+        systemId[6] = ownAddress[4];
+        systemId[5] = ownAddress[3];
 
-      DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
+        DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
     }
     break;
 
     case GAPROLE_ADVERTISING:
-	    HalLedSet(HAL_LED_1, HAL_LED_MODE_ON );
-	    break;
+        HalLedSet(HAL_LED_1, HAL_LED_MODE_ON );
+        break;
 
     case GAPROLE_CONNECTED:
-      HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF );     
-      ccUpdate();
-      break;
+        HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF );
+        gEggState = EGG_STATE_MEASURE_IDLE;
+        ccUpdate();
+        break;
 
     case GAPROLE_WAITING:
-      // Link terminated intentionally: reset all sensors
-      resetSensorSetup();
-      break;
+        // Link terminated intentionally: reset all sensors
+        resetSensorSetup();
+        break;
 
-	  default:
-	    break;
-  }
+    default:
+        break;
+    }
 
-  gapProfileState = newState;
+    gapProfileState = newState;
 }
 
+#if 0
 /*********************************************************************
  * @fn      readAccData
  *
@@ -1021,12 +1099,12 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
  */
 static void readAccData(void)
 {
-  uint8 aData[ACCELEROMETER_DATA_LEN];
+    uint8 aData[ACCELEROMETER_DATA_LEN];
 
-  if (HalAccRead(aData))
-  {
-    Accel_SetParameter( SENSOR_DATA, ACCELEROMETER_DATA_LEN, aData);
-  }
+    if (HalAccRead(aData))
+    {
+        Accel_SetParameter( SENSOR_DATA, ACCELEROMETER_DATA_LEN, aData);
+    }
 }
 
 /*********************************************************************
@@ -1040,13 +1118,14 @@ static void readAccData(void)
  */
 static void readMagData( void )
 {
-  uint8 mData[MAGNETOMETER_DATA_LEN];
+    uint8 mData[MAGNETOMETER_DATA_LEN];
 
-  if (HalMagRead(mData))
-  {
-    Magnetometer_SetParameter(SENSOR_DATA, MAGNETOMETER_DATA_LEN, mData);
-  }
+    if (HalMagRead(mData))
+    {
+        Magnetometer_SetParameter(SENSOR_DATA, MAGNETOMETER_DATA_LEN, mData);
+    }
 }
+#endif
 
 /*********************************************************************
  * @fn      readHumData
@@ -1059,14 +1138,37 @@ static void readMagData( void )
  */
 static void readHumData(void)
 {
-  uint8 hData[HUMIDITY_DATA_LEN];
+    uint8 hData[HUMIDITY_DATA_LEN];
+    uint8 buffers[7];
+    if (HalHumiReadMeasurement(hData))
+    {
+        //Humidity_SetParameter( SENSOR_DATA, HUMIDITY_DATA_LEN, hData);
 
-  if (HalHumiReadMeasurement(hData))
-  {
-    Humidity_SetParameter( SENSOR_DATA, HUMIDITY_DATA_LEN, hData);
-  }
+        buffers[0] = 0xAA;
+        buffers[1] = 0xBB;
+        buffers[2] = 0xCC;
+        buffers[3] = hData[2];
+        buffers[4] = hData[3];
+        buffers[5] = 0x0D;
+        buffers[6] = 0x0A;
+        //eggSerialAppSendNoti(buffers, 7);
+        MDSerialAppSendNoti(buffers, 7);
+    }
+    else
+    {
+        buffers[0] = 0xAA;
+        buffers[1] = 0xBB;
+        buffers[2] = 0xCC;
+        buffers[3] = 0x76;
+        buffers[4] = 0x76;
+        buffers[5] = 0x0D;
+        buffers[6] = 0x0A;
+        //eggSerialAppSendNoti(buffers, 7);
+        MDSerialAppSendNoti(buffers, 7);
+    }
 }
 
+#if 0
 /*********************************************************************
  * @fn      readBarData
  *
@@ -1078,12 +1180,12 @@ static void readHumData(void)
  */
 static void readBarData( void )
 {
-  uint8 bData[BAROMETER_DATA_LEN];
+    uint8 bData[BAROMETER_DATA_LEN];
 
-  if (HalBarReadMeasurement(bData))
-  {
-    Barometer_SetParameter( SENSOR_DATA, BAROMETER_DATA_LEN, bData);
-  }
+    if (HalBarReadMeasurement(bData))
+    {
+        Barometer_SetParameter( SENSOR_DATA, BAROMETER_DATA_LEN, bData);
+    }
 }
 
 /*********************************************************************
@@ -1097,14 +1199,14 @@ static void readBarData( void )
  */
 static void readBarCalibration( void )
 {
-  uint8* cData = osal_mem_alloc(BAROMETER_CALI_LEN);
+    uint8 *cData = osal_mem_alloc(BAROMETER_CALI_LEN);
 
-  if (cData != NULL )
-  {
-    HalBarReadCalibration(cData);
-    Barometer_SetParameter( SENSOR_CALB, BAROMETER_CALI_LEN, cData);
-    osal_mem_free(cData);
-  }
+    if (cData != NULL )
+    {
+        HalBarReadCalibration(cData);
+        Barometer_SetParameter( SENSOR_CALB, BAROMETER_CALI_LEN, cData);
+        osal_mem_free(cData);
+    }
 }
 
 /*********************************************************************
@@ -1118,12 +1220,12 @@ static void readBarCalibration( void )
  */
 static void readIrTempData( void )
 {
-  uint8 tData[IRTEMPERATURE_DATA_LEN];
+    uint8 tData[IRTEMPERATURE_DATA_LEN];
 
-  if (HalIRTempRead(tData))
-  {
-    IRTemp_SetParameter( SENSOR_DATA, IRTEMPERATURE_DATA_LEN, tData);
-  }
+    if (HalIRTempRead(tData))
+    {
+        IRTemp_SetParameter( SENSOR_DATA, IRTEMPERATURE_DATA_LEN, tData);
+    }
 }
 
 /*********************************************************************
@@ -1137,12 +1239,12 @@ static void readIrTempData( void )
  */
 static void readGyroData( void )
 {
-  uint8 gData[GYROSCOPE_DATA_LEN];
+    uint8 gData[GYROSCOPE_DATA_LEN];
 
-  if (HalGyroRead(gData))
-  {
-    Gyro_SetParameter( SENSOR_DATA, GYROSCOPE_DATA_LEN, gData);
-  }
+    if (HalGyroRead(gData))
+    {
+        Gyro_SetParameter( SENSOR_DATA, GYROSCOPE_DATA_LEN, gData);
+    }
 }
 
 /*********************************************************************
@@ -1156,49 +1258,49 @@ static void readGyroData( void )
  */
 static void barometerChangeCB( uint8 paramID )
 {
-  uint8 newValue;
+    uint8 newValue;
 
-  switch( paramID )
-  {
+    switch( paramID )
+    {
     case SENSOR_CONF:
-      Barometer_GetParameter( SENSOR_CONF, &newValue );
+        Barometer_GetParameter( SENSOR_CONF, &newValue );
 
-      switch ( newValue)
-      {
-      case ST_CFG_SENSOR_DISABLE:
-        if (barEnabled)
+        switch ( newValue)
         {
-          barEnabled = FALSE;
-          osal_set_event( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT);
+        case ST_CFG_SENSOR_DISABLE:
+            if (barEnabled)
+            {
+                barEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT);
+            }
+            break;
+
+        case ST_CFG_SENSOR_ENABLE:
+            if(!barEnabled)
+            {
+                barEnabled = TRUE;
+                osal_set_event( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT);
+            }
+            break;
+
+        case ST_CFG_CALIBRATE:
+            readBarCalibration();
+            break;
+
+        default:
+            break;
         }
         break;
 
-      case ST_CFG_SENSOR_ENABLE:
-        if(!barEnabled)
-        {
-          barEnabled = TRUE;
-          osal_set_event( sensorTag_TaskID, ST_BAROMETER_SENSOR_EVT);
-        }
+    case SENSOR_PERI:
+        Barometer_GetParameter( SENSOR_PERI, &newValue );
+        sensorBarPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
         break;
-
-      case ST_CFG_CALIBRATE:
-        readBarCalibration();
-        break;
-
-      default:
-        break;
-      }
-      break;
-
-  case SENSOR_PERI:
-      Barometer_GetParameter( SENSOR_PERI, &newValue );
-      sensorBarPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-      break;
 
     default:
-      // should not get here!
-      break;
-  }
+        // should not get here!
+        break;
+    }
 }
 
 /*********************************************************************
@@ -1212,40 +1314,41 @@ static void barometerChangeCB( uint8 paramID )
  */
 static void irTempChangeCB( uint8 paramID )
 {
-  uint8 newValue;
-  
-  switch (paramID) {
-  case SENSOR_CONF:
-    IRTemp_GetParameter( SENSOR_CONF, &newValue );
-    
-    if ( newValue == ST_CFG_SENSOR_DISABLE)
+    uint8 newValue;
+
+    switch (paramID)
     {
-      // Put sensor to sleep
-      if (irTempEnabled)
-      {
-        irTempEnabled = FALSE;
-        osal_set_event( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT);
-      }
+    case SENSOR_CONF:
+        IRTemp_GetParameter( SENSOR_CONF, &newValue );
+
+        if ( newValue == ST_CFG_SENSOR_DISABLE)
+        {
+            // Put sensor to sleep
+            if (irTempEnabled)
+            {
+                irTempEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT);
+            }
+        }
+        else if (newValue == ST_CFG_SENSOR_ENABLE)
+        {
+            if (!irTempEnabled)
+            {
+                irTempEnabled = TRUE;
+                osal_set_event( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT);
+            }
+        }
+        break;
+
+    case SENSOR_PERI:
+        IRTemp_GetParameter( SENSOR_PERI, &newValue );
+        sensorTmpPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
+        break;
+
+    default:
+        // Should not get here
+        break;
     }
-    else if (newValue == ST_CFG_SENSOR_ENABLE)
-    {
-      if (!irTempEnabled)
-      {
-        irTempEnabled = TRUE;
-        osal_set_event( sensorTag_TaskID,ST_IRTEMPERATURE_READ_EVT);
-      }
-    }
-    break;
-    
-  case SENSOR_PERI:
-    IRTemp_GetParameter( SENSOR_PERI, &newValue );
-    sensorTmpPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-    break;
-    
-  default:
-    // Should not get here
-    break;
-  }
 }
 
 /*********************************************************************
@@ -1259,43 +1362,43 @@ static void irTempChangeCB( uint8 paramID )
  */
 static void accelChangeCB( uint8 paramID )
 {
-  uint8 newValue;
+    uint8 newValue;
 
-  switch (paramID)
-  {
+    switch (paramID)
+    {
     case SENSOR_CONF:
-      Accel_GetParameter( SENSOR_CONF, &newValue );
-      if ( newValue == ST_CFG_SENSOR_DISABLE)
-      {
-        // Put sensor to sleep
-        if (accConfig != ST_CFG_SENSOR_DISABLE)
+        Accel_GetParameter( SENSOR_CONF, &newValue );
+        if ( newValue == ST_CFG_SENSOR_DISABLE)
         {
-          accConfig = ST_CFG_SENSOR_DISABLE;
-          osal_set_event( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT);
+            // Put sensor to sleep
+            if (accConfig != ST_CFG_SENSOR_DISABLE)
+            {
+                accConfig = ST_CFG_SENSOR_DISABLE;
+                osal_set_event( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT);
+            }
         }
-      }
-      else
-      {
-        if (accConfig == ST_CFG_SENSOR_DISABLE)
+        else
         {
-          // Start scheduling only on change disabled -> enabled
-          osal_set_event( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT);
+            if (accConfig == ST_CFG_SENSOR_DISABLE)
+            {
+                // Start scheduling only on change disabled -> enabled
+                osal_set_event( sensorTag_TaskID, ST_ACCELEROMETER_SENSOR_EVT);
+            }
+            // Scheduled already, so just change range
+            accConfig = newValue;
+            HalAccSetRange(accConfig);
         }
-        // Scheduled already, so just change range
-        accConfig = newValue;
-        HalAccSetRange(accConfig);
-      }
-      break;
+        break;
 
     case SENSOR_PERI:
-      Accel_GetParameter( SENSOR_PERI, &newValue );
-      sensorAccPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-      break;
+        Accel_GetParameter( SENSOR_PERI, &newValue );
+        sensorAccPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
+        break;
 
     default:
-      // Should not get here
-      break;
-  }
+        // Should not get here
+        break;
+    }
 }
 
 /*********************************************************************
@@ -1309,40 +1412,40 @@ static void accelChangeCB( uint8 paramID )
  */
 static void magnetometerChangeCB( uint8 paramID )
 {
-  uint8 newValue;
+    uint8 newValue;
 
-  switch (paramID)
-  {
+    switch (paramID)
+    {
     case SENSOR_CONF:
-      Magnetometer_GetParameter( SENSOR_CONF, &newValue );
+        Magnetometer_GetParameter( SENSOR_CONF, &newValue );
 
-      if ( newValue == ST_CFG_SENSOR_DISABLE )
-      {
-        if(magEnabled)
+        if ( newValue == ST_CFG_SENSOR_DISABLE )
         {
-          magEnabled = FALSE;
-          osal_set_event( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT);
+            if(magEnabled)
+            {
+                magEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT);
+            }
         }
-      }
-      else if ( newValue == ST_CFG_SENSOR_ENABLE )
-      {
-        if(!magEnabled)
+        else if ( newValue == ST_CFG_SENSOR_ENABLE )
         {
-          magEnabled = TRUE;
-          osal_set_event( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT);
+            if(!magEnabled)
+            {
+                magEnabled = TRUE;
+                osal_set_event( sensorTag_TaskID, ST_MAGNETOMETER_SENSOR_EVT);
+            }
         }
-      }
-      break;
+        break;
 
     case SENSOR_PERI:
-      Magnetometer_GetParameter( SENSOR_PERI, &newValue );
-      sensorMagPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-      break;
+        Magnetometer_GetParameter( SENSOR_PERI, &newValue );
+        sensorMagPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
+        break;
 
     default:
-      // Should not get here
-      break;
-  }
+        // Should not get here
+        break;
+    }
 }
 
 /*********************************************************************
@@ -1356,42 +1459,42 @@ static void magnetometerChangeCB( uint8 paramID )
  */
 static void humidityChangeCB( uint8 paramID )
 {
-  uint8 newValue;
-  
-  switch ( paramID)
-  {
-  case  SENSOR_CONF:
-    Humidity_GetParameter( SENSOR_CONF, &newValue );
-    
-    if ( newValue == ST_CFG_SENSOR_DISABLE)
+    uint8 newValue;
+
+    switch ( paramID)
     {
-      if (humiEnabled)
-      {
-        humiEnabled = FALSE;
-        osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
-      }
+    case  SENSOR_CONF:
+        Humidity_GetParameter( SENSOR_CONF, &newValue );
+
+        if ( newValue == ST_CFG_SENSOR_DISABLE)
+        {
+            if (humiEnabled)
+            {
+                humiEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+            }
+        }
+
+        if ( newValue == ST_CFG_SENSOR_ENABLE )
+        {
+            if (!humiEnabled)
+            {
+                humiEnabled = TRUE;
+                humiState = 0;
+                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+            }
+        }
+        break;
+
+    case SENSOR_PERI:
+        Humidity_GetParameter( SENSOR_PERI, &newValue );
+        sensorHumPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
+        break;
+
+    default:
+        // Should not get here
+        break;
     }
-    
-    if ( newValue == ST_CFG_SENSOR_ENABLE )
-    {
-      if (!humiEnabled)
-      {
-        humiEnabled = TRUE;
-        humiState = 0;
-        osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
-      }
-    }
-    break;
-    
-  case SENSOR_PERI:
-    Humidity_GetParameter( SENSOR_PERI, &newValue );
-    sensorHumPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-    break;
-    
-  default:
-    // Should not get here
-    break;
-  }
 }
 
 /*********************************************************************
@@ -1405,40 +1508,41 @@ static void humidityChangeCB( uint8 paramID )
  */
 static void gyroChangeCB( uint8 paramID )
 {
-  uint8 newValue;
-  
-  switch (paramID) {
-  case SENSOR_CONF:
-    Gyro_GetParameter( SENSOR_CONF, &newValue );
-    
-    if (newValue == 0)
+    uint8 newValue;
+
+    switch (paramID)
     {
-      // All three axes off, put sensor to sleep
-      if (gyroEnabled)
-      {
-        gyroEnabled = FALSE;
-        osal_set_event( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT);
-      }
+    case SENSOR_CONF:
+        Gyro_GetParameter( SENSOR_CONF, &newValue );
+
+        if (newValue == 0)
+        {
+            // All three axes off, put sensor to sleep
+            if (gyroEnabled)
+            {
+                gyroEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_GYROSCOPE_SENSOR_EVT);
+            }
+        }
+        else
+        {
+            // Bitmap tells which axis to enable (bit 0: X, but 1: Y, but 2: Z)
+            gyroEnabled = TRUE;
+            sensorGyroAxes = newValue & 0x07;
+            sensorGyroUpdateAxes = TRUE;
+            osal_set_event( sensorTag_TaskID,  ST_GYROSCOPE_SENSOR_EVT);
+        }
+        break;
+
+    case SENSOR_PERI:
+        Gyro_GetParameter( SENSOR_PERI, &newValue );
+        sensorGyrPeriod = newValue * SENSOR_PERIOD_RESOLUTION;
+        break;
+
+    default:
+        // Should not get here
+        break;
     }
-    else
-    {
-      // Bitmap tells which axis to enable (bit 0: X, but 1: Y, but 2: Z)
-      gyroEnabled = TRUE;
-      sensorGyroAxes = newValue & 0x07;
-      sensorGyroUpdateAxes = TRUE;
-      osal_set_event( sensorTag_TaskID,  ST_GYROSCOPE_SENSOR_EVT);
-    }
-    break;
-    
-  case SENSOR_PERI:
-    Gyro_GetParameter( SENSOR_PERI, &newValue );
-    sensorGyrPeriod = newValue*SENSOR_PERIOD_RESOLUTION;
-    break;
-    
-  default:
-    // Should not get here
-    break;
-  }
 }
 
 #if defined FEATURE_TEST
@@ -1453,53 +1557,54 @@ static void gyroChangeCB( uint8 paramID )
  */
 static void testChangeCB( uint8 paramID )
 {
-  if( paramID == TEST_CONF_ATTR )
-  {
-    uint8 newValue;
-
-    Test_GetParameter( TEST_CONF_ATTR, &newValue );
-
-    if (newValue & TEST_MODE_ENABLE)
+    if( paramID == TEST_CONF_ATTR )
     {
-      testMode = TRUE;
-    }
-    else
-    {
-      testMode = FALSE;
-    }
+        uint8 newValue;
 
-    if (testMode)
-    {
-      // Test mode: possible to operate LEDs. Key hits will cause notifications,
-      // side key does not influence connection state
-      if (newValue & 0x01)
-      {
-        HalLedSet(HAL_LED_1,HAL_LED_MODE_ON);
-      }
-      else
-      {
-        HalLedSet(HAL_LED_1,HAL_LED_MODE_OFF);
-      }
+        Test_GetParameter( TEST_CONF_ATTR, &newValue );
 
-      if (newValue & 0x02)
-      {
-        HalLedSet(HAL_LED_2,HAL_LED_MODE_ON);
-      }
-      else
-      {
-        HalLedSet(HAL_LED_2,HAL_LED_MODE_OFF);
-      }
+        if (newValue & TEST_MODE_ENABLE)
+        {
+            testMode = TRUE;
+        }
+        else
+        {
+            testMode = FALSE;
+        }
+
+        if (testMode)
+        {
+            // Test mode: possible to operate LEDs. Key hits will cause notifications,
+            // side key does not influence connection state
+            if (newValue & 0x01)
+            {
+                HalLedSet(HAL_LED_1, HAL_LED_MODE_ON);
+            }
+            else
+            {
+                HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF);
+            }
+
+            if (newValue & 0x02)
+            {
+                HalLedSet(HAL_LED_2, HAL_LED_MODE_ON);
+            }
+            else
+            {
+                HalLedSet(HAL_LED_2, HAL_LED_MODE_OFF);
+            }
+        }
+        else
+        {
+            // Normal mode; make sure LEDs are reset and attribute cleared
+            HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF);
+            HalLedSet(HAL_LED_2, HAL_LED_MODE_OFF);
+            newValue = 0x00;
+            Test_SetParameter( TEST_CONF_ATTR, 1, &newValue );
+        }
     }
-    else
-    {
-      // Normal mode; make sure LEDs are reset and attribute cleared
-      HalLedSet(HAL_LED_1,HAL_LED_MODE_OFF);
-      HalLedSet(HAL_LED_2,HAL_LED_MODE_OFF);
-      newValue = 0x00;
-      Test_SetParameter( TEST_CONF_ATTR, 1, &newValue );
-    }
-  }
 }
+#endif
 #endif
 
 /**********************************************************************
@@ -1511,24 +1616,24 @@ static void testChangeCB( uint8 paramID )
  */
 static void ccUpdate( void )
 {
-  uint8 buf[CCSERVICE_CHAR1_LEN];
-  uint16 connInterval;
-  uint16 connSlaveLatency;
-  uint16 connTimeout; 
-  
-  // Get the connection control data
-  GAPRole_GetParameter(GAPROLE_CONN_INTERVAL, &connInterval);
-  GAPRole_GetParameter(GAPROLE_SLAVE_LATENCY, &connSlaveLatency);
-  GAPRole_GetParameter(GAPROLE_CONN_TIMEOUT, &connTimeout);
+    uint8 buf[CCSERVICE_CHAR1_LEN];
+    uint16 connInterval;
+    uint16 connSlaveLatency;
+    uint16 connTimeout;
 
-  buf[0] = LO_UINT16(connInterval);
-  buf[1] = HI_UINT16(connInterval);
-  buf[2] = LO_UINT16(connSlaveLatency);
-  buf[3] = HI_UINT16(connSlaveLatency);
-  buf[4] = LO_UINT16(connTimeout);
-  buf[5] = HI_UINT16(connTimeout);
+    // Get the connection control data
+    GAPRole_GetParameter(GAPROLE_CONN_INTERVAL, &connInterval);
+    GAPRole_GetParameter(GAPROLE_SLAVE_LATENCY, &connSlaveLatency);
+    GAPRole_GetParameter(GAPROLE_CONN_TIMEOUT, &connTimeout);
 
-  CcService_SetParameter(CCSERVICE_CHAR1,sizeof(buf),buf);
+    buf[0] = LO_UINT16(connInterval);
+    buf[1] = HI_UINT16(connInterval);
+    buf[2] = LO_UINT16(connSlaveLatency);
+    buf[3] = HI_UINT16(connSlaveLatency);
+    buf[4] = LO_UINT16(connTimeout);
+    buf[5] = HI_UINT16(connTimeout);
+
+    CcService_SetParameter(CCSERVICE_CHAR1, sizeof(buf), buf);
 }
 
 
@@ -1543,35 +1648,35 @@ static void ccUpdate( void )
  */
 static void ccChangeCB( uint8 paramID )
 {
-  // CCSERVICE_CHAR1: read & notify only
+    // CCSERVICE_CHAR1: read & notify only
 
-  // CCSERVICE_CHAR: requested connection parameters
-  if( paramID == CCSERVICE_CHAR2 )
-  {
-    uint8 buf[CCSERVICE_CHAR2_LEN];
-    uint16 minConnInterval;
-    uint16 maxConnInterval;
-    uint16 slaveLatency;
-    uint16 timeoutMultiplier;
+    // CCSERVICE_CHAR: requested connection parameters
+    if( paramID == CCSERVICE_CHAR2 )
+    {
+        uint8 buf[CCSERVICE_CHAR2_LEN];
+        uint16 minConnInterval;
+        uint16 maxConnInterval;
+        uint16 slaveLatency;
+        uint16 timeoutMultiplier;
 
-    CcService_GetParameter( CCSERVICE_CHAR2, buf );
+        CcService_GetParameter( CCSERVICE_CHAR2, buf );
 
-    minConnInterval = BUILD_UINT16(buf[0],buf[1]);
-    maxConnInterval = BUILD_UINT16(buf[2],buf[3]);
-    slaveLatency = BUILD_UINT16(buf[4],buf[5]);
-    timeoutMultiplier = BUILD_UINT16(buf[6],buf[7]);
+        minConnInterval = BUILD_UINT16(buf[0], buf[1]);
+        maxConnInterval = BUILD_UINT16(buf[2], buf[3]);
+        slaveLatency = BUILD_UINT16(buf[4], buf[5]);
+        timeoutMultiplier = BUILD_UINT16(buf[6], buf[7]);
 
-    // Update connection parameters
-    GAPRole_SendUpdateParam( minConnInterval, maxConnInterval, slaveLatency, 
-                            timeoutMultiplier, GAPROLE_NO_ACTION);
-  }
+        // Update connection parameters
+        GAPRole_SendUpdateParam( minConnInterval, maxConnInterval, slaveLatency,
+                                 timeoutMultiplier, GAPROLE_NO_ACTION);
+    }
 
-  // CCSERVICE_CHAR3: Disconnect request
-  if( paramID == CCSERVICE_CHAR3 )
-  {
-    // Any change in the value will terminate the connection
-    GAPRole_TerminateConnection();
-  }
+    // CCSERVICE_CHAR3: Disconnect request
+    if( paramID == CCSERVICE_CHAR3 )
+    {
+        // Any change in the value will terminate the connection
+        GAPRole_TerminateConnection();
+    }
 }
 
 
@@ -1589,19 +1694,123 @@ static void ccChangeCB( uint8 paramID )
  * @return  none
 */
 static void gapRolesParamUpdateCB( uint16 connInterval, uint16 connSlaveLatency,
-                                  uint16 connTimeout )
+                                   uint16 connTimeout )
 {
-  uint8 buf[CCSERVICE_CHAR1_LEN];
+    uint8 buf[CCSERVICE_CHAR1_LEN];
 
-  buf[0] = LO_UINT16(connInterval);
-  buf[1] = HI_UINT16(connInterval);
-  buf[2] = LO_UINT16(connSlaveLatency);
-  buf[3] = HI_UINT16(connSlaveLatency);
-  buf[4] = LO_UINT16(connTimeout);
-  buf[5] = HI_UINT16(connTimeout);
-  CcService_SetParameter(CCSERVICE_CHAR1,sizeof(buf),buf);
+    buf[0] = LO_UINT16(connInterval);
+    buf[1] = HI_UINT16(connInterval);
+    buf[2] = LO_UINT16(connSlaveLatency);
+    buf[3] = HI_UINT16(connSlaveLatency);
+    buf[4] = LO_UINT16(connTimeout);
+    buf[5] = HI_UINT16(connTimeout);
+    CcService_SetParameter(CCSERVICE_CHAR1, sizeof(buf), buf);
 }
 
+static void md_ProfileChangeCB( uint8 paramID )
+{
+    //uint8 newValueBuf[MD_TRANS_LEN] = {0};
+    switch( paramID )
+    {
+#if 0
+    case MDPROFILE_ERASE:
+        //osal_start_timerEx( keyfobapp_TaskID, KFD_RESET_NOW, 5000 );
+        gWriteDone = MDPROFILE_ERASE;
+        osal_start_timerEx( keyfobapp_TaskID, KFD_TERMINATE_EVT, 3000 );
+        break;
+    case MDPROFILE_UPDATE_AVR:
+        gWriteDone = MDPROFILE_UPDATE_AVR;
+        osal_start_timerEx( keyfobapp_TaskID, KFD_TERMINATE_EVT, 300 );
+        break;
+    case MDPROFILE_RESET_MANUAL:
+        gWriteDone = MDPROFILE_RESET_MANUAL;
+        osal_start_timerEx( keyfobapp_TaskID, KFD_TERMINATE_EVT, 3000 );
+        break;
+    case MDPROFILE_PARTID:
+        //        MDProfile_GetParameter
+        break;
+#endif
+    case MDPROFILE_COMMAND:
+        //MDProfile_GetParameter( MDPROFILE_COMMAND, newValueBuf );
+        //sbpSerialAppWrite(newValueBuf, strlen(newValueBuf));
+        //osal_start_timerEx( sensorTag_TaskID, EGG_RESOLVE_COMMAND, 100 );
+        resolve_command();
+        break;
+    default:
+        // should not reach here!
+        break;
+    }
+}
+
+static void resolve_command(void)
+{
+    BLUETOOTH_COMMUNICATE_COMMAND command_id;
+    uint8 data[MD_TRANS_LEN] = {0};
+    MDProfile_GetParameter( MDPROFILE_COMMAND, data );
+    if(data[0] != HEADER_MAGIC)
+    {
+        return;
+    }
+    command_id = (BLUETOOTH_COMMUNICATE_COMMAND)data[1];
+    uint8 startORstop = data[2];
+    uint8 interval = 70; // second
+    switch (command_id)
+    {
+    // AB010146 -- start, interval is 70s; AB0100 -- stop
+    case REQUEST_TEMPERATURE_CMD_ID:
+        if (startORstop)
+        {
+        }
+        else
+        {
+        }
+        break;
+
+    // AB020146 -- start, interval is 0x46s; AB0200 -- stop
+    case REQUEST_HUMIDITY_CMD_ID:
+        if (startORstop)
+        {
+            if (!humiEnabled)
+            {
+                sensorHumPeriod = data[3];
+                if (sensorHumPeriod < 5)
+                {
+                    sensorHumPeriod = 5000;
+                }
+                else if (sensorHumPeriod > 70)
+                {
+                    sensorHumPeriod = 70000;
+                }
+                else
+                {
+                    sensorHumPeriod = sensorHumPeriod * 1000;
+                }
+                humiEnabled = TRUE;
+                humiState = 0;
+                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+            }
+        }
+        else
+        {
+            if (humiEnabled)
+            {
+                humiEnabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+            }
+        }
+        break;
+
+    // AB030146 -- start, interval is 0x46s; AB0300 -- stop
+    case REQUEST_MPU6050_CMD_ID:
+        if (startORstop)
+        {
+        }
+        else
+        {
+        }
+        break;
+    }
+}
 
 /*********************************************************************
  * @fn      resetCharacteristicValue
@@ -1618,50 +1827,50 @@ static void gapRolesParamUpdateCB( uint16 connInterval, uint16 connSlaveLatency,
  *
  * @return  none
  */
-static void resetCharacteristicValue(uint16 servUuid, uint8 paramID, 
+static void resetCharacteristicValue(uint16 servUuid, uint8 paramID,
                                      uint8 value, uint8 paramLen)
 {
-  uint8* pData = osal_mem_alloc(paramLen);
+    uint8 *pData = osal_mem_alloc(paramLen);
 
-  if (pData == NULL)
-  {
-    return;
-  }
+    if (pData == NULL)
+    {
+        return;
+    }
 
-  osal_memset(pData,value,paramLen);
+    osal_memset(pData, value, paramLen);
 
-  switch(servUuid)
-  {
+    switch(servUuid)
+    {
     case IRTEMPERATURE_SERV_UUID:
-      IRTemp_SetParameter( paramID, paramLen, pData);
-      break;
+        IRTemp_SetParameter( paramID, paramLen, pData);
+        break;
 
     case ACCELEROMETER_SERV_UUID:
-      Accel_SetParameter( paramID, paramLen, pData);
-      break;
+        Accel_SetParameter( paramID, paramLen, pData);
+        break;
 
     case MAGNETOMETER_SERV_UUID:
-      Magnetometer_SetParameter( paramID, paramLen, pData);
-      break;
+        Magnetometer_SetParameter( paramID, paramLen, pData);
+        break;
 
     case HUMIDITY_SERV_UUID:
-      Humidity_SetParameter( paramID, paramLen, pData);
-      break;
+        Humidity_SetParameter( paramID, paramLen, pData);
+        break;
 
     case BAROMETER_SERV_UUID:
-      Barometer_SetParameter( paramID, paramLen, pData);
-      break;
+        Barometer_SetParameter( paramID, paramLen, pData);
+        break;
 
     case GYROSCOPE_SERV_UUID:
-      Gyro_SetParameter( paramID, paramLen, pData);
-      break;
+        Gyro_SetParameter( paramID, paramLen, pData);
+        break;
 
     default:
-      // Should not get here
-      break;
-  }
+        // Should not get here
+        break;
+    }
 
-  osal_mem_free(pData);
+    osal_mem_free(pData);
 }
 
 /*********************************************************************
@@ -1673,29 +1882,29 @@ static void resetCharacteristicValue(uint16 servUuid, uint8 paramID,
  */
 static void resetCharacteristicValues( void )
 {
-  resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_DATA, 0, IRTEMPERATURE_DATA_LEN);
-  resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-  resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_PERI, TEMP_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_DATA, 0, IRTEMPERATURE_DATA_LEN);
+    resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+    resetCharacteristicValue( IRTEMPERATURE_SERV_UUID, SENSOR_PERI, TEMP_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 
-  resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_DATA, 0, ACCELEROMETER_DATA_LEN );
-  resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-  resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_PERI, ACC_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_DATA, 0, ACCELEROMETER_DATA_LEN );
+    resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+    resetCharacteristicValue( ACCELEROMETER_SERV_UUID, SENSOR_PERI, ACC_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 
-  resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_DATA, 0, HUMIDITY_DATA_LEN);
-  resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-  resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_PERI, HUM_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_DATA, 0, HUMIDITY_DATA_LEN);
+    resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+    resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_PERI, HUM_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 
-  resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_DATA, 0, MAGNETOMETER_DATA_LEN);
-  resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-  resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_PERI, MAG_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_DATA, 0, MAGNETOMETER_DATA_LEN);
+    resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+    resetCharacteristicValue( MAGNETOMETER_SERV_UUID, SENSOR_PERI, MAG_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 
-  resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_DATA, 0, BAROMETER_DATA_LEN);
-  resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
-  resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_PERI, BAR_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_DATA, 0, BAROMETER_DATA_LEN);
+    resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+    resetCharacteristicValue( BAROMETER_SERV_UUID, SENSOR_PERI, BAR_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 
-  resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_DATA, 0, GYROSCOPE_DATA_LEN);
-  resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof( uint8 ));
-  resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_PERI, GYRO_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
+    resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_DATA, 0, GYROSCOPE_DATA_LEN);
+    resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof( uint8 ));
+    resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_PERI, GYRO_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 }
 
 

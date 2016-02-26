@@ -63,10 +63,24 @@ extern "C"
 #define ST_GYROSCOPE_SENSOR_EVT                          0x0040
 #define ST_SYS_RESET_EVT                                 0x0080
 
+#define EGG_RESOLVE_COMMAND                              0x0100
 /*********************************************************************
  * MACROS
  */
-
+#define HEADER_MAGIC  (0xAB)
+/* Command ID */
+typedef enum
+{
+    REQUEST_TEMPERATURE_CMD_ID = 0x01,
+    REQUEST_HUMIDITY_CMD_ID = 0x02,
+    REQUEST_MPU6050_CMD_ID = 0x03,
+    
+    RETURN_TEMPERATURE_CMD_ID = 0x04,
+    RETURN_HUMIDITY_CMD_ID = 0x05,
+    RETURN_MPU6050_CMD_ID = 0x06,
+    
+    RETURN_ERROR_CMD_ID = 0x07,
+} BLUETOOTH_COMMUNICATE_COMMAND;
 /*********************************************************************
  * FUNCTIONS
  */

@@ -493,6 +493,7 @@
           <state>$PROJ_DIR$\..\..\Profiles\SensorProfile\cc254x</state>
           <state>$PROJ_DIR$\..\..\Profiles\Keys</state>
           <state>$PROJ_DIR$\..\..\Profiles\DevInfo</state>
+          <state>$PROJ_DIR$\..\..\Profiles\Microduino</state>
         </option>
         <option>
           <name>CCStdIncCheck</name>
@@ -3347,6 +3348,27 @@
   <group>
     <name>APP</name>
     <file>
+      <name>$PROJ_DIR$\..\Source\hal_LM75A_nxp.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\hal_LM75A_nxp.h</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\i2c.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\i2c.h</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\I2Cdev.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\I2Cdev.h</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\Source\MPU6050_6Axis_MotionApps20Egg.h</name>
+    </file>
+    <file>
       <name>$PROJ_DIR$\..\Source\OSAL_SensorTag.c</name>
     </file>
     <file>
@@ -3627,6 +3649,12 @@
     </file>
     <file>
       <name>$PROJ_DIR$\..\..\Profiles\SensorProfile\CC254x\magnetometerservice.h</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\..\Profiles\Microduino\md_profile.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\..\Profiles\Microduino\md_profile.h</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\..\Profiles\OAD\oad.h</name>
