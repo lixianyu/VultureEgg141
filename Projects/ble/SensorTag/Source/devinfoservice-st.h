@@ -73,6 +73,7 @@ extern "C"
 
 // System ID length
 #define DEVINFO_SYSTEM_ID_LEN             8
+#define DEVINFO_SERIAL_NUMBER_LEN         12
 
   // PnP ID length
 #define DEVINFO_PNP_ID_LEN                7

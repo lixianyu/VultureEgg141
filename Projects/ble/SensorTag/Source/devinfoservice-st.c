@@ -154,27 +154,27 @@ static uint8 devInfoSystemId[DEVINFO_SYSTEM_ID_LEN] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Model Number String characteristic
 static uint8 devInfoModelNumberProps = GATT_PROP_READ;
-static const uint8 devInfoModelNumber[] = "CC2541 SensorTag";
+static const uint8 devInfoModelNumber[] = "egg";
 
 // Serial Number String characteristic
 static uint8 devInfoSerialNumberProps = GATT_PROP_READ;
-static const uint8 devInfoSerialNumber[] = "N.A.";
-
-// Firmware Revision String characteristic
-static uint8 devInfoFirmwareRevProps = GATT_PROP_READ;
-static const uint8 devInfoFirmwareRev[] = "1.6 ("__DATE__")";
-
-// Hardware Revision String characteristic
-static uint8 devInfoHardwareRevProps = GATT_PROP_READ;
-static const uint8 devInfoHardwareRev[] = "N.A.";
+static uint8 devInfoSerialNumber[DEVINFO_SERIAL_NUMBER_LEN+1] = "123456789012";
 
 // Software Revision String characteristic
 static uint8 devInfoSoftwareRevProps = GATT_PROP_READ;
-static const uint8 devInfoSoftwareRev[] = "N.A.";
+static const uint8 devInfoSoftwareRev[] = "0.2.226 ("__DATE__")";
+
+// Firmware Revision String characteristic
+static uint8 devInfoFirmwareRevProps = GATT_PROP_READ;
+static const uint8 devInfoFirmwareRev[] = "1.4.1";
+
+// Hardware Revision String characteristic
+static uint8 devInfoHardwareRevProps = GATT_PROP_READ;
+static const uint8 devInfoHardwareRev[] = "0.2";
 
 // Manufacturer Name String characteristic
 static uint8 devInfoMfrNameProps = GATT_PROP_READ;
-static const uint8 devInfoMfrName[] = "Texas Instruments";
+static const uint8 devInfoMfrName[] = "HUOWEIYI Technology Co., Ltd.";
 
 
 // IEEE 11073-20601 Regulatory Certification Data List characteristic
@@ -423,7 +423,9 @@ bStatus_t DevInfo_SetParameter( uint8 param, uint8 len, void *value )
      case DEVINFO_SYSTEM_ID:
       memcpy(devInfoSystemId, value, len);
       break;
-
+     case DEVINFO_SERIAL_NUMBER:
+      memcpy((void*)devInfoSerialNumber, value, len);
+      break;
     default:
       ret = INVALIDPARAMETER;
       break;

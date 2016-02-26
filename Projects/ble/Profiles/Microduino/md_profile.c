@@ -353,7 +353,7 @@ static bStatus_t mdWriteAttrCB(uint16 connHandle, gattAttribute_t *pAttr,
             case MD_CMD_UUID:
                 if ( offset == 0 )
                 {
-                    if ( len != 4)
+                    if ( len < 3 || len > 4)
                     {
                         status = ATT_ERR_INVALID_VALUE_SIZE;
                     }
@@ -706,7 +706,7 @@ bStatus_t MDProfile_GetParameter( uint8 param, void *value )
       break;
 
     case MDPROFILE_COMMAND:
-        memcpy( value, mdTRANSChar, MD_TRANS_LEN );
+        memcpy( value, mdCmdChar, MD_TRANS_LEN );
         break;
         
     default:

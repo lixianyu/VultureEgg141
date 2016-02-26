@@ -22,9 +22,9 @@ extern "C"
  * CONSTANTS
  */
 
-#define MD_SERVICE_UUID      0xF010
-#define MD_CMD_UUID          0xF011
-#define MD_TRANS_UUID        0xF012
+#define MD_SERVICE_UUID      0xF0C0
+#define MD_CMD_UUID          0xF0C1
+#define MD_TRANS_UUID        0xF0C2
 
 // OAD Characteristic Indices
 #define MD_CHAR_IMG_IDENTIFY 0

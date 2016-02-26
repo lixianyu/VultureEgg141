@@ -869,6 +869,15 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 4000 );
         return (events ^ ST_MPU6050_DMP_INIT_EVT);
     }
+    if (events & ST_TEST_EVT)
+    {
+        char bu[64];
+        strcpy(bu, "not not work");
+        MDSerialAppSendNoti((uint8*)bu, strlen(bu));
+        osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 4000 );
+        return (events ^ ST_TEST_EVT);
+    }
+    
 #if 0
     //////////////////////////
     //      Magnetometer    //
@@ -1230,6 +1239,31 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
         systemId[5] = ownAddress[3];
 
         DevInfo_SetParameter(DEVINFO_SYSTEM_ID, DEVINFO_SYSTEM_ID_LEN, systemId);
+
+        // Set the serial number from the bd addr.
+        uint8 serialNumber[DEVINFO_SERIAL_NUMBER_LEN + 2] = "\0";
+        uint8 aNumber;
+        uint8 j = 0;
+        for (int8 i = B_ADDR_LEN - 1; i >= 0; i--)
+        {
+            aNumber = ownAddress[i];
+            if (aNumber < 10)
+            {
+                strcat((char *)serialNumber + j * 2, (const char *)"0");
+                _itoa(aNumber, serialNumber + j * 2 + 1, 16);
+            }
+            else
+            {
+                _itoa(aNumber, serialNumber + j * 2, 16);
+            }
+
+            /*if (osal_memcmp(&aNumber, &Zero, 1) == TRUE)
+            {
+                strcat((char*)serialNumber+j*2+1, (const char*)"0");
+            }*/
+            j++;
+        }
+        DevInfo_SetParameter(DEVINFO_SERIAL_NUMBER, DEVINFO_SERIAL_NUMBER_LEN, serialNumber);
     }
     break;
 
@@ -1241,6 +1275,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
         HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF );
         gEggState = EGG_STATE_MEASURE_IDLE;
         ccUpdate();
+        //osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 4000 );
         break;
 
     case GAPROLE_WAITING:
@@ -1926,6 +1961,11 @@ static void resolve_command(void)
     {
     // AB010146 -- start, interval is 70s; AB0100 -- stop
     case REQUEST_TEMPERATURE_CMD_ID:
+        #if 0
+        strcpy(data, "not work");
+        MDSerialAppSendNoti(data, strlen(data));
+        break;
+        #endif
         if (startORstop)
         {
             if (!lm75Enabled)

@@ -100,7 +100,7 @@ int main(void)
   #endif
 
   /* Run power on self-test */
-  sensorTag_test();
+  //sensorTag_test();
 
   /* Start OSAL */
   osal_start_system(); // No Return from here
