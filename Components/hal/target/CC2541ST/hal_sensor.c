@@ -90,6 +90,20 @@ bool HalSensorReadReg(uint8 addr, uint8 *pBuf, uint8 nBytes)
   return i == nBytes;
 }
 
+int8 HalSensorReadReg1(uint8 addr, uint8 *pBuf, uint8 nBytes)
+{
+  uint8 i = 0;
+
+  /* Send address we're reading from */
+  if (HalI2CWrite(1,&addr) == 1)
+  {
+    /* Now read data */
+    i = HalI2CRead(nBytes,pBuf);
+  }
+
+  return i;
+}
+
 /**************************************************************************************************
 * @fn          HalSensorWriteReg
 * @brief       This function implements the I2C protocol to write to a sensor. he sensor must

@@ -66,6 +66,8 @@ extern "C"
 #define EGG_RESOLVE_COMMAND                              0x0100
 #define ST_LM75A_SENSOR_EVT                              0x0200
 #define ST_LM75A_SENSOR_GPIO_EVT                         0x0400
+#define ST_MPU6050_SENSOR_EVT                            0x0800
+#define ST_MPU6050_DMP_INIT_EVT                          0x1000
 /*********************************************************************
  * MACROS
  */

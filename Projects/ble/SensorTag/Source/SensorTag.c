@@ -103,7 +103,7 @@
 /*********************************************************************
  * MACROS
  */
-
+#define MPU6050_DATA_LEN          14
 /*********************************************************************
  * CONSTANTS
  */
@@ -111,10 +111,11 @@
 // How often to perform sensor reads (milliseconds)
 #define TEMP_DEFAULT_PERIOD                   20000
 #define HUM_DEFAULT_PERIOD                    70000
-#define BAR_DEFAULT_PERIOD                    1000
-#define MAG_DEFAULT_PERIOD                    2000
-#define ACC_DEFAULT_PERIOD                    1000
-#define GYRO_DEFAULT_PERIOD                   1000
+#define MPU6050_DEFAULT_PERIOD                2000
+//#define BAR_DEFAULT_PERIOD                    1000
+//#define MAG_DEFAULT_PERIOD                    2000
+//#define ACC_DEFAULT_PERIOD                    1000
+//#define GYRO_DEFAULT_PERIOD                   1000
 
 // Constants for two-stage reading
 #define TEMP_MEAS_DELAY                       275   // Conversion time 250 ms
@@ -247,11 +248,12 @@ static uint8 attDeviceName[] = "VultureEgg";
 //static bool   irTempEnabled = FALSE;
 //static bool   magEnabled = FALSE;
 //static uint8  accConfig = ST_CFG_SENSOR_DISABLE;
-static uint8  mpu6050Config = ST_CFG_SENSOR_DISABLE;
+//static uint8  mpu6050Config = ST_CFG_SENSOR_DISABLE;
 //static bool   barEnabled = FALSE;
 static bool   humiEnabled = FALSE;
 //static bool   gyroEnabled = FALSE;
 static bool   lm75Enabled = FALSE;
+static bool   mpu6050Enabled = FALSE;
 
 typedef enum
 {
@@ -272,7 +274,7 @@ static uint32 sensorTmpPeriod = TEMP_DEFAULT_PERIOD;
 static uint32 sensorHumPeriod = HUM_DEFAULT_PERIOD;
 //static uint16 sensorBarPeriod = BAR_DEFAULT_PERIOD;
 //static uint16 sensorGyrPeriod = GYRO_DEFAULT_PERIOD;
-
+static uint16 sensorMpu6050Period = MPU6050_DEFAULT_PERIOD;
 //static uint8  sensorGyroAxes = 0;
 //static bool   sensorGyroUpdateAxes = FALSE;
 static uint16 selfTestResult = 0;
@@ -318,10 +320,14 @@ static void gapRolesParamUpdateCB( uint16 connInterval, uint16 connSlaveLatency,
 static void md_ProfileChangeCB( uint8 paramID );
 static void resetSensorSetup( void );
 static void sensorTag_HandleKeys( uint8 shift, uint8 keys );
+#if 0
 static void resetCharacteristicValue( uint16 servID, uint8 paramID, uint8 value,
                                       uint8 paramLen );
 static void resetCharacteristicValues( void );
+#endif
 static void resolve_command(void);
+static void readMPU6050DmpData( uint8 *packet );
+
 //static void eggSerialAppSendNoti(uint8 *pBuffer, uint16 length);
 /*********************************************************************
  * PROFILE CALLBACKS
@@ -806,7 +812,63 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         }
         return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
     }
-    
+    //////////////////////////
+    //    MPU6050           //
+    //////////////////////////
+    if ( events & ST_MPU6050_SENSOR_EVT )
+    {
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_MPU6050_SENSOR_EVT);
+        }
+        if (mpu6050Enabled)
+        {
+            if (gEggState == EGG_STATE_MEASURE_HUMIDITY ||
+                    gEggState == EGG_STATE_MEASURE_LM75A)
+            {
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 1000 );
+                return (events ^ ST_MPU6050_SENSOR_EVT);
+            }
+
+            gEggState = EGG_STATE_MEASURE_MPU6050;
+            mpuIntStatus = HalMPU6050getIntStatus();
+            fifoCount = HalMPU6050getFIFOCount();
+            if ((mpuIntStatus & 0x10) || fifoCount == 1024)
+            {
+                //if (fifoCount == 1024) {
+                // reset so we can continue cleanly
+                HalMPU6050resetFIFO();
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 10 );
+                return (events ^ ST_MPU6050_SENSOR_EVT);
+            }
+            if (mpuIntStatus & 0x02)
+            {
+                while (fifoCount < packetSize)
+                {
+                    fifoCount = HalMPU6050getFIFOCount();
+                }
+                HalMPU6050getFIFOBytes(fifoBuffer, packetSize);
+                fifoCount -= packetSize;
+                readMPU6050DmpData(fifoBuffer);
+            }
+            osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, sensorMpu6050Period );
+            gEggState = EGG_STATE_MEASURE_IDLE;
+            HalMPU6050resetFIFO();
+        }
+        else
+        {
+            //TODO : sleep the MPU6050.
+
+        }
+        return (events ^ ST_MPU6050_SENSOR_EVT);
+    }
+    if (events & ST_MPU6050_DMP_INIT_EVT)
+    {
+        HalMPU6050dmpInitialize();
+        HalMPU6050setDMPEnabled(true);
+        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 4000 );
+        return (events ^ ST_MPU6050_DMP_INIT_EVT);
+    }
 #if 0
     //////////////////////////
     //      Magnetometer    //
@@ -1090,9 +1152,9 @@ static void resetSensorSetup (void)
         accConfig = ST_CFG_SENSOR_DISABLE;
     }
     #endif
-    if (mpu6050Config != ST_CFG_SENSOR_DISABLE)
+    if (mpu6050Enabled)
     {
-        mpu6050Config = ST_CFG_SENSOR_DISABLE;
+        mpu6050Enabled = FALSE;
     }
     #if 0
     if (HalMagStatus() != MAG3110_OFF || magEnabled)
@@ -1935,14 +1997,87 @@ static void resolve_command(void)
     case REQUEST_MPU6050_CMD_ID:
         if (startORstop)
         {
+            if (!mpu6050Enabled)
+            {
+                sensorMpu6050Period = data[3];
+                if (sensorMpu6050Period < 2)
+                {
+                    sensorMpu6050Period = 2000;
+                }
+                else if (sensorMpu6050Period > 10)
+                {
+                    sensorMpu6050Period = 10000;
+                }
+                else
+                {
+                    sensorMpu6050Period = sensorMpu6050Period * 1000;
+                }
+                mpu6050Enabled = TRUE;
+                HalMPU6050initialize();
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 10000 );
+            }
         }
         else
         {
+            if (mpu6050Enabled)
+            {
+                mpu6050Enabled = FALSE;
+                osal_set_event( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT);
+            }
         }
         break;
     }
 }
 
+static void readMPU6050DmpData( uint8 *packet )
+{
+    int16 ax, ay, az;
+    ax = 0;
+    ay = 0;
+    az = 0;
+    uint8 buffers[MPU6050_DATA_LEN];
+    int16_t qI[4];
+    HalMPU6050getAcceleration(&ax, &ay, &az);
+    HalMPU6050dmpGetQuaternion(qI, packet);
+    //    float w = (float)qI[0] / 16384.0f;
+
+    buffers[1] = ax >> 8;
+    buffers[0] = ax & 0xFF;
+    buffers[3] = ay >> 8;
+    buffers[2] = ay & 0xFF;
+    buffers[5] = az >> 8;
+    buffers[4] = az & 0xFF;
+#if 1
+    buffers[7] = qI[0] >> 8;
+    buffers[6] = qI[0] & 0xFF;
+    buffers[9] = qI[1] >> 8;
+    buffers[8] = qI[1] & 0xFF;
+    buffers[11] = qI[2] >> 8;
+    buffers[10] = qI[2] & 0xFF;
+    buffers[13] = qI[3] >> 8;
+    buffers[12] = qI[3] & 0xFF;
+#else
+    buffers[6] = qI[0] >> 8;
+    buffers[7] = qI[0] & 0xFF;
+    buffers[8] = qI[1] >> 8;
+    buffers[9] = qI[1] & 0xFF;
+    buffers[10] = qI[2] >> 8;
+    buffers[11] = qI[2] & 0xFF;
+    buffers[12] = qI[3] >> 8;
+    buffers[13] = qI[3] & 0xFF;
+#endif
+    uint8 sendbuffer[MPU6050_DATA_LEN + 5];
+    sendbuffer[0] = 0xAA;
+    sendbuffer[1] = 0xBB;
+    sendbuffer[2] = 0xAA;
+    VOID osal_memcpy( sendbuffer + 3, buffers, MPU6050_DATA_LEN );
+    sendbuffer[17] = 0x0D;
+    sendbuffer[18] = 0x0A;
+    //Mpu6050_SetParameter(SENSOR_DATA, MPU6050_DATA_LEN, buffers);
+    MDSerialAppSendNoti(sendbuffer, MPU6050_DATA_LEN + 5);
+}
+
+#if 0
 /*********************************************************************
  * @fn      resetCharacteristicValue
  *
@@ -2037,8 +2172,7 @@ static void resetCharacteristicValues( void )
     resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof( uint8 ));
     resetCharacteristicValue( GYROSCOPE_SERV_UUID, SENSOR_PERI, GYRO_DEFAULT_PERIOD / SENSOR_PERIOD_RESOLUTION, sizeof ( uint8 ));
 }
-
-
+#endif
 /*********************************************************************
 *********************************************************************/
 

@@ -3366,6 +3366,9 @@
       <name>$PROJ_DIR$\..\Source\I2Cdev.h</name>
     </file>
     <file>
+      <name>$PROJ_DIR$\..\Source\MPU6050.c</name>
+    </file>
+    <file>
       <name>$PROJ_DIR$\..\Source\MPU6050_6Axis_MotionApps20Egg.h</name>
     </file>
     <file>
