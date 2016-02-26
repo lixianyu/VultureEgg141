@@ -109,7 +109,7 @@
  */
 
 // How often to perform sensor reads (milliseconds)
-#define TEMP_DEFAULT_PERIOD                   1000
+#define TEMP_DEFAULT_PERIOD                   20000
 #define HUM_DEFAULT_PERIOD                    70000
 #define BAR_DEFAULT_PERIOD                    1000
 #define MAG_DEFAULT_PERIOD                    2000
@@ -268,7 +268,7 @@ static bool   sysResetRequest = FALSE;
 
 //static uint16 sensorMagPeriod = MAG_DEFAULT_PERIOD;
 //static uint16 sensorAccPeriod = ACC_DEFAULT_PERIOD;
-static uint16 sensorTmpPeriod = TEMP_DEFAULT_PERIOD;
+static uint32 sensorTmpPeriod = TEMP_DEFAULT_PERIOD;
 static uint32 sensorHumPeriod = HUM_DEFAULT_PERIOD;
 //static uint16 sensorBarPeriod = BAR_DEFAULT_PERIOD;
 //static uint16 sensorGyrPeriod = GYRO_DEFAULT_PERIOD;
@@ -282,6 +282,11 @@ static uint16 packetSize = 42;    // expected DMP packet size (default is 42 byt
 static uint16 fifoCount;     // count of all bytes currently in FIFO
 static uint8 fifoBuffer[64]; // FIFO storage buffer
 static uint8 mpuIntStatus;
+
+static uint8 gsendbuffer[48];
+//static uint8 gsendbuffer2[48];
+static uint8 gLM75ACounter = 0;
+static uint8 gsendbufferI;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -701,6 +706,107 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         }
         return (events ^ ST_HUMIDITY_SENSOR_EVT);
     }
+    //////////////////////////
+    //    LM75A             //
+    //////////////////////////
+    if ( events & ST_LM75A_SENSOR_EVT )
+    {
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_LM75A_SENSOR_EVT);
+        }
+        if (!lm75Enabled)
+        {
+            return (events ^ ST_LM75A_SENSOR_EVT);
+        }
+        if (gEggState == EGG_STATE_MEASURE_HUMIDITY ||
+                gEggState == EGG_STATE_MEASURE_MPU6050)
+        {
+            //Try again after 1500ms.
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 1500 );
+            return (events ^ ST_LM75A_SENSOR_EVT);
+        }
+        gEggState = EGG_STATE_MEASURE_LM75A;
+        uint8 lm75abuffer[2];
+        HalLM75ATempRead(gLM75ACounter++, lm75abuffer);
+        if (gsendbufferI == 0)
+        {
+            osal_memset(gsendbuffer, 0xFF, sizeof(gsendbuffer));
+            gsendbuffer[0] = 0xAA; // 0
+            gsendbuffer[1] = 0xBB;
+            gsendbuffer[2] = 0xBB; // 2
+            gsendbufferI += 3;
+        }
+        gsendbuffer[gsendbufferI++] = lm75abuffer[0];
+        gsendbuffer[gsendbufferI++] = lm75abuffer[1];
+        if (gLM75ACounter >= 8)
+        {
+            //gsendbuffer[gsendbufferI++] = 0x0D;
+            //gsendbuffer[gsendbufferI++] = 0x0A;
+            //eggSerialAppSendNoti(gsendbuffer, 11);
+            //ST_HAL_DELAY(1000); //Delay 8ms
+            //eggSerialAppSendNoti(gsendbuffer+11, 10);
+            gLM75ACounter = 0;
+            //gsendbufferI = 0;
+            //gEggState = EGG_STATE_MEASURE_IDLE;
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 200 );
+        }
+        else
+        {
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 101 );
+        }
+        return (events ^ ST_LM75A_SENSOR_EVT);
+    }
+    if (events & ST_LM75A_SENSOR_GPIO_EVT)
+    {
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
+        }
+        if (!lm75Enabled) 
+        {
+            return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
+        }
+        if (gEggState == EGG_STATE_MEASURE_HUMIDITY ||
+                gEggState == EGG_STATE_MEASURE_MPU6050)
+        {
+            //Try again after 1500ms.
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 1500 );
+            return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
+        }
+        uint8 lm75abuffer[2] = {0};
+        EggLM75ATempRead(gLM75ACounter++, lm75abuffer);
+#if 0
+        if (gsendbufferI == 0)
+        {
+            osal_memset(gsendbuffer2, 0xFF, sizeof(gsendbuffer2));
+            gsendbuffer2[0] = 0xAA; // 0
+            gsendbuffer2[1] = 0xBB;
+            gsendbuffer2[2] = 0xBC; // 2
+            gsendbufferI += 3;
+        }
+#endif
+        gsendbuffer[gsendbufferI++] = lm75abuffer[0];
+        gsendbuffer[gsendbufferI++] = lm75abuffer[1];
+        if (gLM75ACounter >= 8)
+        {
+            gsendbuffer[gsendbufferI++] = 0x0D;
+            gsendbuffer[gsendbufferI++] = 0x0A;
+            MDSerialAppSendNoti(gsendbuffer, 19);
+            ST_HAL_DELAY(1000); //Delay 8ms
+            MDSerialAppSendNoti(gsendbuffer + 19, 18);
+            gLM75ACounter = 0;
+            gsendbufferI = 0;
+            gEggState = EGG_STATE_MEASURE_IDLE;
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, sensorTmpPeriod );
+        }
+        else
+        {
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 101 );
+        }
+        return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
+    }
+    
 #if 0
     //////////////////////////
     //      Magnetometer    //
@@ -1760,9 +1866,34 @@ static void resolve_command(void)
     case REQUEST_TEMPERATURE_CMD_ID:
         if (startORstop)
         {
+            if (!lm75Enabled)
+            {
+                sensorTmpPeriod = data[3];
+                if (sensorTmpPeriod < 5)
+                {
+                    sensorTmpPeriod = 5000;
+                }
+                else if (sensorTmpPeriod > 70)
+                {
+                    sensorTmpPeriod = 70000;
+                }
+                else
+                {
+                    sensorTmpPeriod = sensorTmpPeriod * 1000;
+                }
+                lm75Enabled = TRUE;
+                gsendbufferI = 0;
+                gLM75ACounter = 0;
+                osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 100 );
+            }
         }
         else
         {
+            if (lm75Enabled)
+            {
+                lm75Enabled = FALSE;
+                osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 100 );
+            }
         }
         break;
 

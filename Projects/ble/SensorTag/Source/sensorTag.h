@@ -64,6 +64,8 @@ extern "C"
 #define ST_SYS_RESET_EVT                                 0x0080
 
 #define EGG_RESOLVE_COMMAND                              0x0100
+#define ST_LM75A_SENSOR_EVT                              0x0200
+#define ST_LM75A_SENSOR_GPIO_EVT                         0x0400
 /*********************************************************************
  * MACROS
  */
