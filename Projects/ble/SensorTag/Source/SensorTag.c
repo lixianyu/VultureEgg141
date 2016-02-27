@@ -143,7 +143,7 @@
 #define DEFAULT_DESIRED_CONN_TIMEOUT          600
 
 // Whether to enable automatic parameter update request when a connection is formed
-#define DEFAULT_ENABLE_UPDATE_REQUEST         FALSE
+#define DEFAULT_ENABLE_UPDATE_REQUEST         TRUE
 
 // Connection Pause Peripheral time value (in seconds)
 #define DEFAULT_CONN_PAUSE_PERIPHERAL         8
@@ -612,6 +612,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
 
         HALLM75ATempInit();
         EggLM75ATempInit();
+        P0_5 = 0;
         return ( events ^ ST_START_DEVICE_EVT );
     }
 #if 0
@@ -829,12 +830,12 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
                 osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 1000 );
                 return (events ^ ST_MPU6050_SENSOR_EVT);
             }
-
             gEggState = EGG_STATE_MEASURE_MPU6050;
             mpuIntStatus = HalMPU6050getIntStatus();
             fifoCount = HalMPU6050getFIFOCount();
             if ((mpuIntStatus & 0x10) || fifoCount == 1024)
             {
+                //P0_5 = !P0_5;
                 //if (fifoCount == 1024) {
                 // reset so we can continue cleanly
                 HalMPU6050resetFIFO();
@@ -843,6 +844,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
             }
             if (mpuIntStatus & 0x02)
             {
+                P0_5 = 1;
                 while (fifoCount < packetSize)
                 {
                     fifoCount = HalMPU6050getFIFOCount();
@@ -851,9 +853,16 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
                 fifoCount -= packetSize;
                 readMPU6050DmpData(fifoBuffer);
             }
-            osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, sensorMpu6050Period );
-            gEggState = EGG_STATE_MEASURE_IDLE;
+            else
+            {
+              P0_5 = 0;
+            }
+            HalMPU6050setDMPEnabled(false);
+            HalMPU6050setSleepEnabled(true);
             HalMPU6050resetFIFO();
+            gEggState = EGG_STATE_MEASURE_IDLE;
+            osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_temp_EVT, sensorMpu6050Period );
+            
         }
         else
         {
@@ -866,8 +875,15 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     {
         HalMPU6050dmpInitialize();
         HalMPU6050setDMPEnabled(true);
-        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 4000 );
+        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_temp_EVT, 1000 );
         return (events ^ ST_MPU6050_DMP_INIT_EVT);
+    }
+    if (events & ST_MPU6050_DMP_temp_EVT)
+    {
+        HalMPU6050setSleepEnabled(false);
+        HalMPU6050setDMPEnabled(true);
+        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 500 );
+        return (events ^ ST_MPU6050_DMP_temp_EVT);
     }
     if (events & ST_TEST_EVT)
     {
@@ -1856,6 +1872,7 @@ static void ccChangeCB( uint8 paramID )
     // CCSERVICE_CHAR: requested connection parameters
     if( paramID == CCSERVICE_CHAR2 )
     {
+        //P0_5 = 1;
         uint8 buf[CCSERVICE_CHAR2_LEN];
         uint16 minConnInterval;
         uint16 maxConnInterval;
@@ -2037,6 +2054,7 @@ static void resolve_command(void)
     case REQUEST_MPU6050_CMD_ID:
         if (startORstop)
         {
+            //P0_5 = !P0_5;
             if (!mpu6050Enabled)
             {
                 sensorMpu6050Period = data[3];
@@ -2053,8 +2071,8 @@ static void resolve_command(void)
                     sensorMpu6050Period = sensorMpu6050Period * 1000;
                 }
                 mpu6050Enabled = TRUE;
-                HalMPU6050initialize();
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 10000 );
+                //HalMPU6050initialize();
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 911 );
             }
         }
         else
