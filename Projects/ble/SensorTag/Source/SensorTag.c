@@ -1317,7 +1317,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
         for (int8 i = B_ADDR_LEN - 1; i >= 0; i--)
         {
             aNumber = ownAddress[i];
-            if (aNumber < 10)
+            if (aNumber < 16)
             {
                 strcat((char *)serialNumber + j * 2, (const char *)"0");
                 _itoa(aNumber, serialNumber + j * 2 + 1, 16);

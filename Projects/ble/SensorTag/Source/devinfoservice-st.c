@@ -114,6 +114,12 @@ CONST uint8 devInfoMfrNameUUID[ATT_BT_UUID_SIZE] =
   LO_UINT16(MANUFACTURER_NAME_UUID), HI_UINT16(MANUFACTURER_NAME_UUID)
 };
 
+// Manufacturer URL String
+CONST uint8 devInfoMfrURLUUID[ATT_BT_UUID_SIZE] =
+{
+  LO_UINT16(MANUFACTURER_URL_UUID), HI_UINT16(MANUFACTURER_URL_UUID)
+};
+
 // IEEE 11073-20601 Regulatory Certification Data List
 CONST uint8 devInfo11073CertUUID[ATT_BT_UUID_SIZE] =
 {
@@ -154,7 +160,7 @@ static uint8 devInfoSystemId[DEVINFO_SYSTEM_ID_LEN] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Model Number String characteristic
 static uint8 devInfoModelNumberProps = GATT_PROP_READ;
-static const uint8 devInfoModelNumber[] = "egg";
+static const uint8 devInfoModelNumber[] = "Egg";
 
 // Serial Number String characteristic
 static uint8 devInfoSerialNumberProps = GATT_PROP_READ;
@@ -162,7 +168,7 @@ static uint8 devInfoSerialNumber[DEVINFO_SERIAL_NUMBER_LEN+1] = "123456789012";
 
 // Software Revision String characteristic
 static uint8 devInfoSoftwareRevProps = GATT_PROP_READ;
-static const uint8 devInfoSoftwareRev[] = "0.2.226 ("__DATE__")";
+static const uint8 devInfoSoftwareRev[] = "0.2.227 ("__DATE__")";
 
 // Firmware Revision String characteristic
 static uint8 devInfoFirmwareRevProps = GATT_PROP_READ;
@@ -176,6 +182,10 @@ static const uint8 devInfoHardwareRev[] = "0.2";
 static uint8 devInfoMfrNameProps = GATT_PROP_READ;
 static const uint8 devInfoMfrName[] = "HUOWEIYI Technology Co., Ltd.";
 
+// Manufacturer URL String characteristic
+static uint8 devInfoMfrURLProps = GATT_PROP_READ;
+static const uint8 devInfoMfrURLName[] = "www.huoweiyi.com";
+static const uint8 urlDesc[] = "www.huoweiyi.com";
 
 // IEEE 11073-20601 Regulatory Certification Data List characteristic
 static uint8 devInfo11073CertProps = GATT_PROP_READ;
@@ -323,6 +333,30 @@ static gattAttribute_t devInfoAttrTbl[] =
         (uint8 *) devInfoMfrName
       },
 
+    // Manufacturer URL String Declaration
+    {
+      { ATT_BT_UUID_SIZE, characterUUID },
+      GATT_PERMIT_READ,
+      0,
+      &devInfoMfrURLProps
+    },
+
+      // Manufacturer URL Value
+      {
+        { ATT_BT_UUID_SIZE, devInfoMfrURLUUID },
+        GATT_PERMIT_READ,
+        0,
+        (uint8 *) devInfoMfrURLName
+      },
+
+      // Manufacturer URL Description
+      { 
+        { ATT_BT_UUID_SIZE, charUserDescUUID },
+        GATT_PERMIT_READ, 
+        0, 
+        (uint8*)urlDesc 
+      },
+      
     // IEEE 11073-20601 Regulatory Certification Data List Declaration
     {
       { ATT_BT_UUID_SIZE, characterUUID },
@@ -632,6 +666,22 @@ static bStatus_t devInfo_ReadAttrCB( uint16 connHandle, gattAttribute_t *pAttr,
         
         // copy data
         memcpy(pValue, &devInfoMfrName[offset], *pLen);
+      }
+      break;
+
+    case MANUFACTURER_URL_UUID:
+      // verify offset
+      if (offset > (sizeof(devInfoMfrURLName) - 1))
+      {
+        status = ATT_ERR_INVALID_OFFSET;
+      }
+      else
+      {
+        // determine read length (exclude null terminating character)
+        *pLen = MIN(maxLen, ((sizeof(devInfoMfrURLName) - 1) - offset));
+        
+        // copy data
+        memcpy(pValue, &devInfoMfrURLName[offset], *pLen);
       }
       break;
 

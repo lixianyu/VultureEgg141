@@ -78,6 +78,7 @@ extern "C"
   // PnP ID length
 #define DEVINFO_PNP_ID_LEN                7
 
+#define MANUFACTURER_URL_UUID 0xFF99
 /*********************************************************************
  * TYPEDEFS
  */

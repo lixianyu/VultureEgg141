@@ -760,7 +760,7 @@
         </option>
         <option>
           <name>OutputFile</name>
-          <state>SensorTag.d51</state>
+          <state>VultureEgg.d51</state>
         </option>
         <option>
           <name>OutputFormat</name>
@@ -962,7 +962,7 @@
         </option>
         <option>
           <name>ExtraOutputFile</name>
-          <state>SensorTag.hex</state>
+          <state>VultureEgg.hex</state>
         </option>
         <option>
           <name>ExtraOutputFormat</name>
