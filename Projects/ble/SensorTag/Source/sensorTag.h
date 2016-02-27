@@ -74,6 +74,7 @@ extern "C"
 /*********************************************************************
  * MACROS
  */
+//#define HUMIDITY_MEASUREMENT_1
 #define HEADER_MAGIC  (0xAB)
 /* Command ID */
 typedef enum

@@ -63,6 +63,8 @@ bool HalHumiExecMeasurementStep(uint8 state);
 bool HalHumiReadMeasurement(uint8 *pBuf);
 bool HalHumiTest(void);
 
+void HalExecHumidityMeasurement(void);
+void HalHumiRead(uint8 *pBuf);
 /*********************************************************************/
 
 #ifdef __cplusplus

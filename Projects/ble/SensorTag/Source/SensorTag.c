@@ -121,7 +121,7 @@
 #define TEMP_MEAS_DELAY                       275   // Conversion time 250 ms
 #define BAR_FSM_PERIOD                        80
 #define ACC_FSM_PERIOD                        20
-#define HUM_FSM_PERIOD                        20
+#define HUM_FSM_PERIOD                        100
 #define GYRO_STARTUP_TIME                     60    // Start-up time max. 50 ms
 
 // What is the advertising interval when device is discoverable (units of 625us, 160=100ms)
@@ -667,6 +667,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     //////////////////////////
     //      Humidity        //
     //////////////////////////
+#ifdef HUMIDITY_MEASUREMENT_1
     if ( events & ST_HUMIDITY_SENSOR_EVT )
     {
         if ( gapProfileState != GAPROLE_CONNECTED )
@@ -713,6 +714,50 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         }
         return (events ^ ST_HUMIDITY_SENSOR_EVT);
     }
+#else
+    if ( events & ST_HUMIDITY_SENSOR_EVT )
+    {
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_HUMIDITY_SENSOR_EVT);
+        }
+        if (humiEnabled)
+        {
+            if (gEggState == EGG_STATE_MEASURE_MPU6050 ||
+                    gEggState == EGG_STATE_MEASURE_LM75A)
+            {
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, 1000 );//Try again after 1000ms.
+                return (events ^ ST_HUMIDITY_SENSOR_EVT);
+            }
+            gEggState = EGG_STATE_MEASURE_HUMIDITY;
+            if (humiState == 0)
+            {
+                HalExecHumidityMeasurement();
+            }
+            if (humiState == 1)
+            {
+                readHumData();
+                humiState = 0;
+                gEggState = EGG_STATE_MEASURE_IDLE;
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, sensorHumPeriod );
+            }
+            else
+            {
+                humiState++;
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, HUM_FSM_PERIOD );
+            }
+        }
+        else
+        {
+            #if 0
+            resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_DATA, 0, HUMIDITY_DATA_LEN);
+            resetCharacteristicValue( HUMIDITY_SERV_UUID, SENSOR_CONF, ST_CFG_SENSOR_DISABLE, sizeof ( uint8 ));
+            #endif
+            //HalHumiInit();
+        }
+        return (events ^ ST_HUMIDITY_SENSOR_EVT);
+    }
+#endif
     //////////////////////////
     //    LM75A             //
     //////////////////////////
@@ -866,8 +911,8 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         }
         else
         {
-            //TODO : sleep the MPU6050.
-
+            HalMPU6050setDMPEnabled(false);
+            HalMPU6050setSleepEnabled(true);
         }
         return (events ^ ST_MPU6050_SENSOR_EVT);
     }
@@ -880,9 +925,16 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     }
     if (events & ST_MPU6050_DMP_temp_EVT)
     {
-        HalMPU6050setSleepEnabled(false);
-        HalMPU6050setDMPEnabled(true);
-        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 500 );
+        if ( gapProfileState != GAPROLE_CONNECTED )
+        {
+            return (events ^ ST_MPU6050_SENSOR_EVT);
+        }
+        if (mpu6050Enabled)
+        {
+            HalMPU6050setSleepEnabled(false);
+            HalMPU6050setDMPEnabled(true);
+            osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 500 );
+        }
         return (events ^ ST_MPU6050_DMP_temp_EVT);
     }
     if (events & ST_TEST_EVT)
@@ -1180,6 +1232,8 @@ static void resetSensorSetup (void)
     if (mpu6050Enabled)
     {
         mpu6050Enabled = FALSE;
+        HalMPU6050setDMPEnabled(false);
+        HalMPU6050setSleepEnabled(true);
     }
     #if 0
     if (HalMagStatus() != MAG3110_OFF || magEnabled)
@@ -1355,6 +1409,7 @@ static void readMagData( void )
  *
  * @return  none
  */
+#ifdef HUMIDITY_MEASUREMENT_1
 static void readHumData(void)
 {
     uint8 hData[HUMIDITY_DATA_LEN];
@@ -1386,6 +1441,22 @@ static void readHumData(void)
         MDSerialAppSendNoti(buffers, 7);
     }
 }
+#else
+static void readHumData(void)
+{
+    uint8 hData[HUMIDITY_DATA_LEN];
+    uint8 buffers[7];
+    HalHumiRead(hData);
+    buffers[0] = 0xAA;
+    buffers[1] = 0xBB;
+    buffers[2] = 0xCC;
+    buffers[3] = hData[0];
+    buffers[4] = hData[1];
+    buffers[5] = 0x0D;
+    buffers[6] = 0x0A;
+    MDSerialAppSendNoti(buffers, 7);
+}
+#endif
 
 #if 0
 /*********************************************************************
@@ -1976,7 +2047,7 @@ static void resolve_command(void)
     uint8 interval = 70; // second
     switch (command_id)
     {
-    // AB010146 -- start, interval is 70s; AB0100 -- stop
+    // AB010114 -- start, interval is 20s; AB0100 -- stop
     case REQUEST_TEMPERATURE_CMD_ID:
         #if 0
         strcpy(data, "not work");
@@ -2011,12 +2082,16 @@ static void resolve_command(void)
             if (lm75Enabled)
             {
                 lm75Enabled = FALSE;
-                osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 100 );
+                if (gEggState == EGG_STATE_MEASURE_LM75A)
+                {
+                    gEggState = EGG_STATE_MEASURE_IDLE;
+                }
+                //osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 100 );
             }
         }
         break;
 
-    // AB020146 -- start, interval is 0x46s; AB0200 -- stop
+    // AB020146 -- start, interval is 70s; AB0200 -- stop
     case REQUEST_HUMIDITY_CMD_ID:
         if (startORstop)
         {
@@ -2045,12 +2120,16 @@ static void resolve_command(void)
             if (humiEnabled)
             {
                 humiEnabled = FALSE;
-                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+                if (gEggState == EGG_STATE_MEASURE_HUMIDITY)
+                {
+                    gEggState = EGG_STATE_MEASURE_IDLE;
+                }
+                //osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
             }
         }
         break;
 
-    // AB030146 -- start, interval is 0x46s; AB0300 -- stop
+    // AB030102 -- start, interval is 2s; AB0300 -- stop
     case REQUEST_MPU6050_CMD_ID:
         if (startORstop)
         {
@@ -2080,6 +2159,10 @@ static void resolve_command(void)
             if (mpu6050Enabled)
             {
                 mpu6050Enabled = FALSE;
+                if (gEggState == EGG_STATE_MEASURE_MPU6050)
+                {
+                    gEggState = EGG_STATE_MEASURE_IDLE;
+                }
                 osal_set_event( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT);
             }
         }

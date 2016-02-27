@@ -114,6 +114,21 @@ void HalHumiInit(void)
   success = FALSE;
 }
 
+// Lxy added. 2016-02-27 Sat.
+void HalExecHumidityMeasurement(void)
+{
+    HalHumiSelect();
+    HalHumiWriteCmd(SHT21_CMD_HUMI_T_NH);
+}
+
+void HalHumiRead(uint8 *pBuf)
+{
+  HalHumiSelect();
+  HalHumiReadData(buf, DATA_LEN);
+  // Store humidity
+  pBuf[0] = buf[1];
+  pBuf[1] = buf[0];
+}
 
 /**************************************************************************************************
 * @fn          HalHumiExecMeasurementStep
