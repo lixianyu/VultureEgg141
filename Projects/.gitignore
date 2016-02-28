@@ -1,0 +1,13 @@
+settings
+*.bin
+*.sfr
+*.pbi
+*.pbi.cout
+*.pbd
+*.pbd.browse
+*.d51
+*.r51
+*.hex
+*.dep
+*.map
+*.sim

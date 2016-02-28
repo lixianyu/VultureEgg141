@@ -233,14 +233,21 @@ static uint8 scanRspData[] =
 // best kept short to conserve power while advertisting)
 static uint8 advertData[] =
 {
-    // Flags; this sets the device to use limited discoverable
-    // mode (advertises for 30 seconds at a time) instead of general
-    // discoverable mode (advertises indefinitely)
-    0x02,   // length of this data
-    GAP_ADTYPE_FLAGS,
-    DEFAULT_DISCOVERABLE_MODE | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
-};
+    0x02,   // length of first data structure (2 bytes excluding length byte)
+    GAP_ADTYPE_FLAGS,   // AD Type = Flags
+    //0x1a,
+    GAP_ADTYPE_FLAGS_GENERAL | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
 
+    // service UUID, to notify central devices what services are included
+    // in this peripheral
+    0x1B,   // length of second data structure (7 bytes excluding length byte)
+    0xff, 0x4c, 0x00, 0x02, 0x15,
+    0xFD, 0xA5, 0x06, 0x93, 0xA4, 0xE2, 0x4F, 0xB1, 0xAF, 0xCF, 0xC6, 0xEB, 0x07, 0x64, 0x78, 0x25,
+    0x27, 0x18,
+    0x6A, 0x7F,
+    0xc5,
+    0xBB,
+};
 // GAP GATT Attributes
 static uint8 attDeviceName[] = "VultureEgg";
 
@@ -884,12 +891,12 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
                 //if (fifoCount == 1024) {
                 // reset so we can continue cleanly
                 HalMPU6050resetFIFO();
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 10 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 100 );
                 return (events ^ ST_MPU6050_SENSOR_EVT);
             }
             if (mpuIntStatus & 0x02)
             {
-                P0_5 = 1;
+                //P0_5 = 1;
                 while (fifoCount < packetSize)
                 {
                     fifoCount = HalMPU6050getFIFOCount();
@@ -900,7 +907,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
             }
             else
             {
-              P0_5 = 0;
+              //P0_5 = 0;
             }
             HalMPU6050setDMPEnabled(false);
             HalMPU6050setSleepEnabled(true);
