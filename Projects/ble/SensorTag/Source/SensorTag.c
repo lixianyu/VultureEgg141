@@ -2065,18 +2065,21 @@ static void resolve_command(void)
         {
             if (!lm75Enabled)
             {
-                sensorTmpPeriod = data[3];
-                if (sensorTmpPeriod < 5)
+                if (data[3] != 0) // Do not use default period.
                 {
-                    sensorTmpPeriod = 5000;
-                }
-                else if (sensorTmpPeriod > 70)
-                {
-                    sensorTmpPeriod = 70000;
-                }
-                else
-                {
-                    sensorTmpPeriod = sensorTmpPeriod * 1000;
+                    sensorTmpPeriod = data[3];
+                    if (sensorTmpPeriod < 5)
+                    {
+                        sensorTmpPeriod = 5000;
+                    }
+                    else if (sensorTmpPeriod > 70)
+                    {
+                        sensorTmpPeriod = 70000;
+                    }
+                    else
+                    {
+                        sensorTmpPeriod = sensorTmpPeriod * 1000;
+                    }
                 }
                 lm75Enabled = TRUE;
                 gsendbufferI = 0;
@@ -2104,22 +2107,26 @@ static void resolve_command(void)
         {
             if (!humiEnabled)
             {
-                sensorHumPeriod = data[3];
-                if (sensorHumPeriod < 5)
+                if (data[3] != 0) // Do not use default period.
                 {
-                    sensorHumPeriod = 5000;
-                }
-                else if (sensorHumPeriod > 70)
-                {
-                    sensorHumPeriod = 70000;
-                }
-                else
-                {
-                    sensorHumPeriod = sensorHumPeriod * 1000;
+                    sensorHumPeriod = data[3];
+                    if (sensorHumPeriod < 5)
+                    {
+                        sensorHumPeriod = 5000;
+                    }
+                    else if (sensorHumPeriod > 70)
+                    {
+                        sensorHumPeriod = 70000;
+                    }
+                    else
+                    {
+                        sensorHumPeriod = sensorHumPeriod * 1000;
+                    }
                 }
                 humiEnabled = TRUE;
                 humiState = 0;
-                osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+                //osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, 101 );
             }
         }
         else
@@ -2143,22 +2150,25 @@ static void resolve_command(void)
             //P0_5 = !P0_5;
             if (!mpu6050Enabled)
             {
-                sensorMpu6050Period = data[3];
-                if (sensorMpu6050Period < 2)
+                if (data[3] != 0) // Do not use default period.
                 {
-                    sensorMpu6050Period = 2000;
-                }
-                else if (sensorMpu6050Period > 10)
-                {
-                    sensorMpu6050Period = 10000;
-                }
-                else
-                {
-                    sensorMpu6050Period = sensorMpu6050Period * 1000;
+                    sensorMpu6050Period = data[3];
+                    if (sensorMpu6050Period < 2)
+                    {
+                        sensorMpu6050Period = 2000;
+                    }
+                    else if (sensorMpu6050Period > 10)
+                    {
+                        sensorMpu6050Period = 10000;
+                    }
+                    else
+                    {
+                        sensorMpu6050Period = sensorMpu6050Period * 1000;
+                    }
                 }
                 mpu6050Enabled = TRUE;
                 //HalMPU6050initialize();
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 911 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 102 );
             }
         }
         else
