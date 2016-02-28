@@ -2081,6 +2081,10 @@ static void resolve_command(void)
                         sensorTmpPeriod = sensorTmpPeriod * 1000;
                     }
                 }
+                else
+                {
+                    sensorTmpPeriod = TEMP_DEFAULT_PERIOD;
+                }
                 lm75Enabled = TRUE;
                 gsendbufferI = 0;
                 gLM75ACounter = 0;
@@ -2122,6 +2126,10 @@ static void resolve_command(void)
                     {
                         sensorHumPeriod = sensorHumPeriod * 1000;
                     }
+                }
+                else
+                {
+                    sensorHumPeriod = HUM_DEFAULT_PERIOD;
                 }
                 humiEnabled = TRUE;
                 humiState = 0;
@@ -2165,6 +2173,10 @@ static void resolve_command(void)
                     {
                         sensorMpu6050Period = sensorMpu6050Period * 1000;
                     }
+                }
+                else
+                {
+                    sensorMpu6050Period = MPU6050_DEFAULT_PERIOD;
                 }
                 mpu6050Enabled = TRUE;
                 //HalMPU6050initialize();
