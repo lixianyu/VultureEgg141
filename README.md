@@ -7,10 +7,14 @@ VultureEgg project based on 'SensorTag' project.
 
 ==========
 Service UUID : F0C0
+
+
 Command UUID : F0C1
+
 Trans   UUID : F0C2
 
 Enable F0C2 notify.
+
 Write F0C1 following command
 
 Protocol between phone and VultureEgg:
