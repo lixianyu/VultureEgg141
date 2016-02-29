@@ -296,8 +296,8 @@
           <state>HAL_DMA=TRUE</state>
           <state>POWER_SAVING</state>
           <state>HAL_LCD=FALSE</state>
-          <state>HAL_LED=TRUE</state>
-          <state>HAL_KEY=TRUE</state>
+          <state>HAL_LED=FALSE</state>
+          <state>HAL_KEY=FALSE</state>
           <state>HAL_I2C=TRUE</state>
           <state>HAL_ADC=FALSE</state>
         </option>

@@ -386,7 +386,7 @@ void HalKeyInit(void){}
 void HalKeyConfig(bool interruptEnable, halKeyCBack_t cback){}
 uint8 HalKeyRead(void){ return 0;}
 void HalKeyPoll(void){}
-
+void halProcessKeyInterrupt (void){}
 #endif /* HAL_KEY */
 
 

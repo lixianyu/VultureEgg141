@@ -130,14 +130,24 @@
 // General discoverable mode advertises indefinitely
 #define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
 
+/* Apple Connnection Params Limits
+ 1. Interval Max * (Slave Latency + 1) ¡Ü 2 seconds£»
+ 2. Interval Min ¡Ý 20 ms£»
+ 3. Interval Min + 20 ms ¡Ü Interval Max£»
+ 4. Slave Latency ¡Ü 4£»
+ 5. connSupervisionTimeout ¡Ü 6 seconds
+ 6. Interval Max * (Slave Latency + 1) * 3 < connSupervisionTimeout
+ */
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     280
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     280
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     303
 
 // Maximum connection interval (units of 1.25ms, 800=1000ms) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     296
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     296
+#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     319
 
 // Slave latency to use if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_SLAVE_LATENCY         3
+#define DEFAULT_DESIRED_SLAVE_LATENCY         4
 
 // Supervision timeout value (units of 10ms, 1000=10s) if automatic parameter update request is enabled
 #define DEFAULT_DESIRED_CONN_TIMEOUT          600
@@ -879,7 +889,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
             if (gEggState == EGG_STATE_MEASURE_HUMIDITY ||
                     gEggState == EGG_STATE_MEASURE_LM75A)
             {
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 1000 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT, 3180 );
                 return (events ^ ST_MPU6050_SENSOR_EVT);
             }
             gEggState = EGG_STATE_MEASURE_MPU6050;
@@ -2088,7 +2098,7 @@ static void resolve_command(void)
                 lm75Enabled = TRUE;
                 gsendbufferI = 0;
                 gLM75ACounter = 0;
-                osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 100 );
+                osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 5000 );
             }
         }
         else
@@ -2134,7 +2144,7 @@ static void resolve_command(void)
                 humiEnabled = TRUE;
                 humiState = 0;
                 //osal_set_event( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT);
-                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, 101 );
+                osal_start_timerEx( sensorTag_TaskID, ST_HUMIDITY_SENSOR_EVT, 5101 );
             }
         }
         else
@@ -2180,7 +2190,7 @@ static void resolve_command(void)
                 }
                 mpu6050Enabled = TRUE;
                 //HalMPU6050initialize();
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 102 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 5102 );
             }
         }
         else
