@@ -43,3 +43,8 @@ AB0300 -- Stop MPU6050
 
 ==========
 When disconnected, all measurement will be stopped.
+
+==========
+About soft IIC:
+#define SDA_GPIO P0_4
+#define SCL_GPIO P0_1
