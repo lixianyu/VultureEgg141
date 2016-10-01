@@ -70,7 +70,7 @@ static uint8 mdCmdChar[MD_TRANS_LEN] = {0};
 static uint8 mdTRANSChar[MD_TRANS_LEN] = {0};
 
 // MD Characteristic Properties
-static uint8 mdCharProps = GATT_PROP_NOTIFY;
+static uint8 mdCharProps = GATT_PROP_READ | GATT_PROP_WRITE_NO_RSP | GATT_PROP_NOTIFY;
 static uint8 mdCharPropsWrite = GATT_PROP_WRITE | GATT_PROP_WRITE_NO_RSP;
 
 // MD Client Characteristic Configs
@@ -128,7 +128,7 @@ static gattAttribute_t mdAttrTbl[] =
     // MD TRANS Characteristic Value
     {
         { ATT_BT_UUID_SIZE, mdCharUUID[1] },
-        GATT_PERMIT_WRITE,
+        GATT_PERMIT_READ|GATT_PERMIT_WRITE,
         0,
         mdTRANSChar
     },
@@ -251,12 +251,37 @@ static bStatus_t mdReadAttrCB(uint16 connHandle, gattAttribute_t *pAttr,
                               uint8 *pValue, uint8 *pLen, uint16 offset,
                               uint8 maxLen, uint8 method)
 {
-    bStatus_t status = SUCCESS;
+  bStatus_t status = SUCCESS;
 
-    // TBD: is there any use for supporting reads
+  if ( offset > 0 )
+  {
+    return ( ATT_ERR_ATTR_NOT_LONG );
+  }
+ 
+  if ( pAttr->type.len == ATT_BT_UUID_SIZE )
+  {
+    // 16-bit UUID
+    uint16 uuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
+    switch ( uuid )
+    {
+      case MD_TRANS_UUID:
+        *pLen = MD_TRANS_LEN;
+        VOID osal_memcpy( pValue, pAttr->pValue, MD_TRANS_LEN );
+        break;
+        
+      default:
+        // Should never get here! (characteristics 3 and 4 do not have read permissions)
+        *pLen = 0;
+        status = ATT_ERR_ATTR_NOT_FOUND;
+        break;
+    }
+  }
+  else
+  {
+    // 128-bit UUID
     *pLen = 0;
     status = ATT_ERR_INVALID_HANDLE;
-
+  }
     return status;
 }
 
@@ -367,6 +392,31 @@ static bStatus_t mdWriteAttrCB(uint16 connHandle, gattAttribute_t *pAttr,
                     uint8 *pCurValue = (uint8 *)pAttr->pValue;
 		            memset(pCurValue, 0, MD_TRANS_LEN);
                     memcpy(pCurValue, pValue, len );
+                    mdProfile_AppCBs->pfnMDProfileChange( MDPROFILE_COMMAND );
+                }
+                break;
+            case MD_TRANS_UUID:
+                if ( offset == 0 )
+                {
+                    if ( len < 3 || len > 4)
+                    {
+                        status = ATT_ERR_INVALID_VALUE_SIZE;
+                    }
+                }
+                else
+                {
+                    status = ATT_ERR_ATTR_NOT_LONG;
+                }
+                if ( status == SUCCESS )
+                {
+                    #if 0
+                    uint8 *pCurValue = (uint8 *)pAttr->pValue;
+		            memset(pCurValue, 0, MD_TRANS_LEN);
+                    memcpy(pCurValue, pValue, len );
+                    #else
+                    memset(mdCmdChar, 0, MD_TRANS_LEN);
+                    memcpy(mdCmdChar, pValue, len );
+                    #endif
                     mdProfile_AppCBs->pfnMDProfileChange( MDPROFILE_COMMAND );
                 }
                 break;

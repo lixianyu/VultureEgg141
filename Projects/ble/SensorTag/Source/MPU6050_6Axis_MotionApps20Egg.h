@@ -280,7 +280,7 @@ static uint8 dmpUpdates[MPU6050_DMP_UPDATES_SIZE] = {
     0x01,   0x62,   0x02,   0x00, 0x00,
     0x00,   0x60,   0x04,   0x00, 0x40, 0x00, 0x00
 };
-
+extern bool MDSerialAppSendNoti(uint8 *pBuffer,uint16 length);
 uint8_t HalMPU6050dmpInitialize() {
     // reset device
     DEBUG_PRINTLN(F("\n\nResetting MPU6050..."));
@@ -525,6 +525,9 @@ uint8_t HalMPU6050dmpInitialize() {
         }
     } else {
         DEBUG_PRINTLN(F("ERROR! DMP code verification failed."));
+        char bu[32];
+        sprintf(bu, "DMP error\r\n");
+        MDSerialAppSendNoti((uint8*)bu, strlen(bu));
         return 1; // main binary block loading failed
     }
     return 0; // success

@@ -21,10 +21,15 @@ extern "C"
 /*********************************************************************
  * CONSTANTS
  */
-
+#if 0
 #define MD_SERVICE_UUID      0xF0C0
 #define MD_CMD_UUID          0xF0C1
 #define MD_TRANS_UUID        0xF0C2
+#else
+#define MD_SERVICE_UUID      0xFFF0
+#define MD_CMD_UUID          0xF0C1
+#define MD_TRANS_UUID        0xFFF6
+#endif
 
 // OAD Characteristic Indices
 #define MD_CHAR_IMG_IDENTIFY 0
@@ -34,7 +39,7 @@ extern "C"
 #define MD_BLOCK_SIZE_BIG     20
 
 
-#define MD_TRANS_LEN                    40
+#define MD_TRANS_LEN                    19
 
 // Profile Parameters
 #define MDPROFILE_ERASE                 1

@@ -40,6 +40,7 @@
 /*********************************************************************
  * INCLUDES
  */
+#include <stdio.h>
 #include <string.h>
 #include "bcomdef.h"
 #include "OSAL.h"
@@ -140,17 +141,17 @@
  */
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic parameter update request is enabled
 //#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     280
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     303
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     303//16//303
 
 // Maximum connection interval (units of 1.25ms, 800=1000ms) if automatic parameter update request is enabled
 //#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     296
-#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     319
+#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     319//32//319
 
 // Slave latency to use if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_SLAVE_LATENCY         4
+#define DEFAULT_DESIRED_SLAVE_LATENCY         4//0
 
 // Supervision timeout value (units of 10ms, 1000=10s) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_CONN_TIMEOUT          600
+#define DEFAULT_DESIRED_CONN_TIMEOUT          600//100//600
 
 // Whether to enable automatic parameter update request when a connection is formed
 #define DEFAULT_ENABLE_UPDATE_REQUEST         TRUE
@@ -241,6 +242,7 @@ static uint8 scanRspData[] =
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
 // best kept short to conserve power while advertisting)
+#if 0
 static uint8 advertData[] =
 {
     0x02,   // length of first data structure (2 bytes excluding length byte)
@@ -258,6 +260,25 @@ static uint8 advertData[] =
     0xc5,
     0xBB,
 };
+#else
+static uint8 advertData[] =
+{
+  // Flags; this sets the device to use limited discoverable
+  // mode (advertises for 30 seconds at a time) instead of general
+  // discoverable mode (advertises indefinitely)
+  0x02,   // length of this data
+  GAP_ADTYPE_FLAGS,
+  GAP_ADTYPE_FLAGS_GENERAL | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
+
+  // service UUID, to notify central devices what services are included
+  // in this peripheral
+  0x03,   // length of this data
+  GAP_ADTYPE_16BIT_MORE,      // some of the UUID's, but not all
+  LO_UINT16( MD_SERVICE_UUID ),
+  HI_UINT16( MD_SERVICE_UUID ),
+
+};
+#endif
 // GAP GATT Attributes
 static uint8 attDeviceName[] = "VultureEgg";
 
@@ -589,6 +610,8 @@ void SensorTag_Init( uint8 task_id )
  *
  * @return  events not processed
  */
+static uint32 gDmpInitTime;
+static uint32 gDmpRet;
 uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
 {
     VOID task_id; // OSAL required parameter that isn't used in this function
@@ -630,6 +653,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         HALLM75ATempInit();
         EggLM75ATempInit();
         P0_5 = 0;
+        osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 2102 );
         return ( events ^ ST_START_DEVICE_EVT );
     }
 #if 0
@@ -935,7 +959,14 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     }
     if (events & ST_MPU6050_DMP_INIT_EVT)
     {
-        HalMPU6050dmpInitialize();
+        uint32 begin = osal_GetSystemClock();
+        gDmpRet = HalMPU6050dmpInitialize();
+        uint32 end = osal_GetSystemClock();
+        gDmpInitTime = end - begin;
+        if (gDmpRet == 0)
+        {
+            MDSerialAppSendNoti("DMP OK\r\n", strlen("DMP OK\r\n"));
+        }
         HalMPU6050setDMPEnabled(true);
         osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_temp_EVT, 1000 );
         return (events ^ ST_MPU6050_DMP_INIT_EVT);
@@ -944,7 +975,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     {
         if ( gapProfileState != GAPROLE_CONNECTED )
         {
-            return (events ^ ST_MPU6050_SENSOR_EVT);
+            return (events ^ ST_MPU6050_DMP_temp_EVT);
         }
         if (mpu6050Enabled)
         {
@@ -956,11 +987,22 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
     }
     if (events & ST_TEST_EVT)
     {
+        static uint32 gg = 0;
         char bu[64];
-        strcpy(bu, "not not work");
-        MDSerialAppSendNoti((uint8*)bu, strlen(bu));
-        osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 4000 );
+        sprintf(bu, "Nice %ld\r\n", gg++);
+        MDSerialAppSendNoti((uint8*)bu, 20);
+        osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 3000 );
         return (events ^ ST_TEST_EVT);
+    }
+    if (events & ST_IRTEMPERATURE_READ_EVT)
+    {
+        static uint32 gg = 0;
+        char bu[64];
+        sprintf(bu, "Nicer %ld\r\n", gg++);
+        uint16 len = MD_TRANS_LEN > strlen(bu) ? strlen(bu) : MD_TRANS_LEN;
+        MDSerialAppSendNoti((uint8*)bu, len);
+        osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, 4000 );
+        return (events ^ ST_IRTEMPERATURE_READ_EVT);
     }
     
 #if 0
@@ -1361,8 +1403,8 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
     case GAPROLE_CONNECTED:
         HalLedSet(HAL_LED_1, HAL_LED_MODE_OFF );
         gEggState = EGG_STATE_MEASURE_IDLE;
-        ccUpdate();
-        //osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 4000 );
+        //ccUpdate();
+        //osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, 4000 );
         break;
 
     case GAPROLE_WAITING:
@@ -2050,6 +2092,7 @@ static void md_ProfileChangeCB( uint8 paramID )
     }
 }
 
+extern uint8 devInfoSoftwareRev[];
 static void resolve_command(void)
 {
     BLUETOOTH_COMMUNICATE_COMMAND command_id;
@@ -2059,6 +2102,7 @@ static void resolve_command(void)
     {
         return;
     }
+
     command_id = (BLUETOOTH_COMMUNICATE_COMMAND)data[1];
     uint8 startORstop = data[2];
     uint8 interval = 70; // second
@@ -2067,10 +2111,12 @@ static void resolve_command(void)
     // AB010114 -- start, interval is 20s; AB0100 -- stop
     case REQUEST_TEMPERATURE_CMD_ID:
         #if 0
-        strcpy(data, "not work");
-        MDSerialAppSendNoti(data, strlen(data));
+        //MDSerialAppSendNoti((uint8*)data, 18);
+        osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 1000 );
+        //osal_set_event( sensorTag_TaskID, ST_TEST_EVT );
         break;
         #endif
+
         if (startORstop)
         {
             if (!lm75Enabled)
@@ -2171,9 +2217,9 @@ static void resolve_command(void)
                 if (data[3] != 0) // Do not use default period.
                 {
                     sensorMpu6050Period = data[3];
-                    if (sensorMpu6050Period < 2)
+                    if (sensorMpu6050Period < 1)
                     {
-                        sensorMpu6050Period = 2000;
+                        sensorMpu6050Period = 1000;
                     }
                     else if (sensorMpu6050Period > 10)
                     {
@@ -2190,7 +2236,9 @@ static void resolve_command(void)
                 }
                 mpu6050Enabled = TRUE;
                 //HalMPU6050initialize();
-                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 5102 );
+                MDSerialAppSendNoti("Init mpu6050\r\n", strlen("Init mpu6050\r\n"));
+                //osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 5102 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_temp_EVT, 1000 );
             }
         }
         else
@@ -2206,6 +2254,25 @@ static void resolve_command(void)
             }
         }
         break;
+        case 0xBB:
+            MDSerialAppSendNoti(devInfoSoftwareRev, strlen(devInfoSoftwareRev));
+            break;
+        case 0xBC:
+            sprintf(data, "time=%ld\r\n", gDmpInitTime);
+            MDSerialAppSendNoti(data, strlen(data));
+            break;
+        case 0xBD:
+            if (startORstop)
+            {
+                osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 1000 );
+            }
+            else
+            {
+                osal_stop_timerEx(sensorTag_TaskID, ST_TEST_EVT);
+            }
+            break;
+        default:
+            break;
     }
 }
 
