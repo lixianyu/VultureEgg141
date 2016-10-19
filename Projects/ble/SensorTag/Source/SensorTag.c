@@ -141,20 +141,34 @@
  */
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic parameter update request is enabled
 //#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     280
-#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     303//16//303
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     303//16//303
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     16
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     32
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     48
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     64
+//#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     80
+#define DEFAULT_DESIRED_MIN_CONN_INTERVAL     80
 
 // Maximum connection interval (units of 1.25ms, 800=1000ms) if automatic parameter update request is enabled
 //#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     296
-#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     319//32//319
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     319//32//319
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     32
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     48
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     64
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     80
+//#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     96
+#define DEFAULT_DESIRED_MAX_CONN_INTERVAL     96
 
 // Slave latency to use if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_SLAVE_LATENCY         4//0
+#define DEFAULT_DESIRED_SLAVE_LATENCY         4
 
 // Supervision timeout value (units of 10ms, 1000=10s) if automatic parameter update request is enabled
-#define DEFAULT_DESIRED_CONN_TIMEOUT          600//100//600
+//#define DEFAULT_DESIRED_CONN_TIMEOUT          600//100//600
+#define DEFAULT_DESIRED_CONN_TIMEOUT          1000
 
 // Whether to enable automatic parameter update request when a connection is formed
 #define DEFAULT_ENABLE_UPDATE_REQUEST         TRUE
+//#define DEFAULT_ENABLE_UPDATE_REQUEST         FALSE
 
 // Connection Pause Peripheral time value (in seconds)
 #define DEFAULT_CONN_PAUSE_PERIPHERAL         8
@@ -834,19 +848,27 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         gsendbuffer[gsendbufferI++] = lm75abuffer[1];
         if (gLM75ACounter >= 8)
         {
-            //gsendbuffer[gsendbufferI++] = 0x0D;
-            //gsendbuffer[gsendbufferI++] = 0x0A;
-            //eggSerialAppSendNoti(gsendbuffer, 11);
-            //ST_HAL_DELAY(1000); //Delay 8ms
-            //eggSerialAppSendNoti(gsendbuffer+11, 10);
+        #if 1
+            #if 0
+            gsendbuffer[gsendbufferI++] = 0x0D;
+            gsendbuffer[gsendbufferI++] = 0x0A;
+            MDSerialAppSendNoti(gsendbuffer, 19);
+            ST_HAL_DELAY(1000); //Delay 8ms
+            MDSerialAppSendNoti(gsendbuffer+19, 2);
+            gsendbufferI = 0;
+            gEggState = EGG_STATE_MEASURE_IDLE;
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, sensorTmpPeriod );
+            #else
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 2500 );
+            #endif
             gLM75ACounter = 0;
-            //gsendbufferI = 0;
-            //gEggState = EGG_STATE_MEASURE_IDLE;
-            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 200 );
+        #else
+            osal_start_timerEx( sensorTag_TaskID, ST_CONTINUE_SEND_TEMP_NOTI_EVT, 1010 );
+        #endif
         }
         else
         {
-            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 101 );
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 1000 );
         }
         return (events ^ ST_LM75A_SENSOR_EVT);
     }
@@ -869,16 +891,16 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         }
         uint8 lm75abuffer[2] = {0};
         EggLM75ATempRead(gLM75ACounter++, lm75abuffer);
-#if 0
+        #if 0
         if (gsendbufferI == 0)
         {
-            osal_memset(gsendbuffer2, 0xFF, sizeof(gsendbuffer2));
-            gsendbuffer2[0] = 0xAA; // 0
-            gsendbuffer2[1] = 0xBB;
-            gsendbuffer2[2] = 0xBC; // 2
+            osal_memset(gsendbuffer, 0xFF, sizeof(gsendbuffer));
+            gsendbuffer[0] = 0xAA; // 0
+            gsendbuffer[1] = 0xBB;
+            gsendbuffer[2] = 0xBB; // 2
             gsendbufferI += 3;
         }
-#endif
+        #endif
         gsendbuffer[gsendbufferI++] = lm75abuffer[0];
         gsendbuffer[gsendbufferI++] = lm75abuffer[1];
         if (gLM75ACounter >= 8)
@@ -886,16 +908,24 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
             gsendbuffer[gsendbufferI++] = 0x0D;
             gsendbuffer[gsendbufferI++] = 0x0A;
             MDSerialAppSendNoti(gsendbuffer, 19);
+            #if 0
             ST_HAL_DELAY(1000); //Delay 8ms
             MDSerialAppSendNoti(gsendbuffer + 19, 18);
             gLM75ACounter = 0;
             gsendbufferI = 0;
             gEggState = EGG_STATE_MEASURE_IDLE;
             osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, sensorTmpPeriod );
+            #elif 0
+            ST_HAL_DELAY(1000); //Delay 8ms
+            MDSerialAppSendNoti(gsendbuffer + 19, 2);
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, sensorTmpPeriod );
+            #else
+            osal_start_timerEx( sensorTag_TaskID, ST_CONTINUE_SEND_TEMP_NOTI_EVT, 1000);
+            #endif
         }
         else
         {
-            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 101 );
+            osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 1000 );
         }
         return (events ^ ST_LM75A_SENSOR_GPIO_EVT);
     }
@@ -994,6 +1024,7 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         osal_start_timerEx( sensorTag_TaskID, ST_TEST_EVT, 3000 );
         return (events ^ ST_TEST_EVT);
     }
+    #if 0
     if (events & ST_IRTEMPERATURE_READ_EVT)
     {
         static uint32 gg = 0;
@@ -1003,6 +1034,24 @@ uint16 SensorTag_ProcessEvent( uint8 task_id, uint16 events )
         MDSerialAppSendNoti((uint8*)bu, len);
         osal_start_timerEx( sensorTag_TaskID, ST_IRTEMPERATURE_READ_EVT, 4000 );
         return (events ^ ST_IRTEMPERATURE_READ_EVT);
+    }
+    #endif
+    if (events & ST_CONTINUE_SEND_TEMP_NOTI_EVT)
+    {
+        MDSerialAppSendNoti(gsendbuffer + 19, 18);
+        gLM75ACounter = 0;
+        gsendbufferI = 0;
+        gEggState = EGG_STATE_MEASURE_IDLE;
+        osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, sensorTmpPeriod );
+        return (events ^ ST_CONTINUE_SEND_TEMP_NOTI_EVT);
+    }
+    if (events & ST_CONN_PARAM_UPDATE_EVT)
+    {
+        // Send param update.  If it fails, retry until successful.
+        GAPRole_SendUpdateParam( DEFAULT_DESIRED_MIN_CONN_INTERVAL, DEFAULT_DESIRED_MAX_CONN_INTERVAL,
+                                 DEFAULT_DESIRED_SLAVE_LATENCY, DEFAULT_DESIRED_CONN_TIMEOUT,
+                                 GAPROLE_NO_ACTION);
+        return (events ^ ST_CONN_PARAM_UPDATE_EVT);
     }
     
 #if 0
@@ -2145,6 +2194,7 @@ static void resolve_command(void)
                 gsendbufferI = 0;
                 gLM75ACounter = 0;
                 osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_EVT, 5000 );
+                //osal_start_timerEx( sensorTag_TaskID, ST_LM75A_SENSOR_GPIO_EVT, 5000 );
             }
         }
         else

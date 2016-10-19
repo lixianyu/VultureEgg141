@@ -182,7 +182,7 @@ bool HalLM75ATempRead(uint8 id, uint8 *pBuf)
 */
   HalLM75ATempSelect(id);
   HalSensorWriteReg(LM75A_REG_ADDR_CONFIG, configLM75AOn, 1);
-  ST_HAL_DELAY(12500);
+  ST_HAL_DELAY(12500);//100ms
   // Read the sensor registers
 
   success = HalSensorReadReg(LM75A_REG_ADDR_TEMPERATURE, temp, 2 );
