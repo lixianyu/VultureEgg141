@@ -6,15 +6,15 @@ http://www.geek-workshop.com/thread-10164-1-1.html
 VultureEgg project based on 'SensorTag' project.
 
 ==========
-Service UUID : F0C0
+Service UUID : FFF0
 
 Command UUID : F0C1
 
-Trans   UUID : F0C2
+Trans   UUID : FFF6
 
 ==========
 
-Enable F0C2 notify.
+Enable FFF6 notify.
 
 Write F0C1 following command
 
@@ -36,7 +36,9 @@ AB0200 -- Stop humidity(SHT21)
 
 AB0301 -- Start MPU6050 and measurement period is the default value 2s.
 
-AB030103 -- Start MPU6050 and measurement period is 3s
+AB03010001 -- Start MPU6050 and measurement period is 1ms
+AB03010002 -- Start MPU6050 and measurement period is 2ms
+AB0301012C -- Start MPU6050 and measurement period is 300ms
 
 AB0300 -- Stop MPU6050
 
