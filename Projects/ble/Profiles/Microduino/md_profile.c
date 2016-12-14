@@ -378,7 +378,7 @@ static bStatus_t mdWriteAttrCB(uint16 connHandle, gattAttribute_t *pAttr,
             case MD_CMD_UUID:
                 if ( offset == 0 )
                 {
-                    if ( len < 3 || len > 4)
+                    if ( len < 3 || len > 5)
                     {
                         status = ATT_ERR_INVALID_VALUE_SIZE;
                     }
@@ -398,7 +398,7 @@ static bStatus_t mdWriteAttrCB(uint16 connHandle, gattAttribute_t *pAttr,
             case MD_TRANS_UUID:
                 if ( offset == 0 )
                 {
-                    if ( len < 3 || len > 4)
+                    if ( len < 3 || len > 5)
                     {
                         status = ATT_ERR_INVALID_VALUE_SIZE;
                     }

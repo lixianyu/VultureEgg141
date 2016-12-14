@@ -2304,6 +2304,52 @@ static void resolve_command(void)
             }
         }
         break;
+    // AB04010001 -- start, interval is 1ms;
+    // AB04010064 -- start, interval is 100ms;
+    // AB0401012C -- start, interval is 300ms;
+    // AB04010384 -- start, interval is 900ms;
+    // AB04010BB8 -- start, interval is 3000ms;
+    // AB04011388 -- start, interval is 5000ms;
+    // AB04012710 -- start, interval is 10000ms;
+    // AB0400 -- stop
+    case REQUEST_MPU6050_CMD_ID_E:
+        if (startORstop)
+        {
+            //P0_5 = !P0_5;
+            if (!mpu6050Enabled)
+            {
+                if (data[4] != 0 || data[3] != 0) // Do not use default period.
+                {
+                    sensorMpu6050Period = (data[3] << 8) | data[4]; // MSB
+                    if (sensorMpu6050Period > 10000)
+                    {
+                        sensorMpu6050Period = 10000;
+                    }
+                }
+                else
+                {
+                    sensorMpu6050Period = MPU6050_DEFAULT_PERIOD;
+                }
+                mpu6050Enabled = TRUE;
+                //HalMPU6050initialize();
+                MDSerialAppSendNoti("Init mpu6050\r\n", strlen("Init mpu6050\r\n"));
+                //osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_INIT_EVT, 5102 );
+                osal_start_timerEx( sensorTag_TaskID, ST_MPU6050_DMP_temp_EVT, 1000 );
+            }
+        }
+        else
+        {
+            if (mpu6050Enabled)
+            {
+                mpu6050Enabled = FALSE;
+                if (gEggState == EGG_STATE_MEASURE_MPU6050)
+                {
+                    gEggState = EGG_STATE_MEASURE_IDLE;
+                }
+                osal_set_event( sensorTag_TaskID, ST_MPU6050_SENSOR_EVT);
+            }
+        }
+        break;
         case 0xBB:
             MDSerialAppSendNoti(devInfoSoftwareRev, strlen(devInfoSoftwareRev));
             break;
@@ -2322,6 +2368,7 @@ static void resolve_command(void)
             }
             break;
         default:
+            MDSerialAppSendNoti("Who are you?\r\n", strlen("Who are you?\r\n"));
             break;
     }
 }

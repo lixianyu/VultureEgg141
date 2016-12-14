@@ -169,7 +169,7 @@ static uint8 devInfoSerialNumber[DEVINFO_SERIAL_NUMBER_LEN+1] = "123456789012";
 // Software Revision String characteristic
 static uint8 devInfoSoftwareRevProps = GATT_PROP_READ;
 //static const uint8 devInfoSoftwareRev[] = "0.2.927 ("__TIME__" "__DATE__")";
-uint8 devInfoSoftwareRev[] = "0.2.A18.11";
+uint8 devInfoSoftwareRev[] = "0.2.C14.00";
 
 // Firmware Revision String characteristic
 static uint8 devInfoFirmwareRevProps = GATT_PROP_READ;
